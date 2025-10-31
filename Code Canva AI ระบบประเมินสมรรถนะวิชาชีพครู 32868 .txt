@@ -1,0 +1,3591 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบประเมินสมรรถนะวิชาชีพครู</title>
+<script src="/_sdk/data_sdk.js"></script>
+<script src="/_sdk/element_sdk.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body {
+box-sizing: border-box;
+font-family: 'Sarabun', sans-serif;
+}
+* {
+font-family: 'Sarabun', sans-serif;
+}
+.toast {
+position: fixed;
+top: 20px;
+right: 20px;
+padding: 16px 24px;
+border-radius: 8px;
+color: white;
+font-weight: 500;
+z-index: 1000;
+animation: slideIn 0.3s ease-out;
+}
+.toast.success { background-color: #10b981; }
+.toast.error { background-color: #ef4444; }
+.toast.info { background-color: #3b82f6; }
+@keyframes slideIn {
+from { transform: translateX(400px); opacity: 0; }
+to { transform: translateX(0); opacity: 1; }
+}
+.spinner {
+border: 3px solid #f3f4f6;
+border-top: 3px solid #3b82f6;
+border-radius: 50%;
+width: 20px;
+height: 20px;
+animation: spin 1s linear infinite;
+}
+@keyframes spin {
+0% { transform: rotate(0deg); }
+100% { transform: rotate(360deg); }
+}
+</style>
+<style>@view-transition { navigation: auto; }</style>
+</head>
+<body class="bg-gray-50">
+<div id="app"></div>
+<script>
+const defaultConfig = {
+system_name: "ระบบประเมินสมรรถนะวิชาชีพครู",
+university_name: "มหาวิทยาลัยมหิดล",
+faculty_name: "สถาบันราชสุดา คณะแพทยศาสตร์โรงพยาบาลรามาธิบดี",
+department_name: "ภาควิชาการศึกษา",
+program_name: "หลักสูตรครุศาสตรบัณฑิต",
+user_instruction: "ยินดีต้อนรับเข้าสู่ระบบประเมินสมรรถนะวิชาชีพครู ระบบนี้ใช้สำหรับบันทึกและประมวลผลการประเมินสมรรถนะของนักศึกษาฝึกประสบการณ์วิชาชีพครู โดยผู้ประเมินหลัก ประกอบด้วย 1) อาจารย์นิเทศก์ 2) ครูพี่เลี้ยง 3) ผู้อำนวยการสถานศึกษา และ 4) ผู้แทนคณะกรรมการสถานศึกษา เพื่อให้การประเมินเป็นไปตามมาตรฐานวิชาชีพตามที่คุรุสภากำหนด มีความโปร่งใส ตรวจสอบได้ และสะท้อนสมรรถนะของนักศึกษาอย่างเป็นระบบ\n\nการประเมินจะดำเนินการทั้งหมด 3 รอบ ตามช่วงระยะเวลาการฝึกประสบการณ์ ดังนี้\n\nรอบที่ 1 (สัปดาห์ที่ 4)\nรอบที่ 2 (สัปดาห์ที่ 8)\nรอบที่ 3 (สัปดาห์ที่ 12)\n\nโปรดดำเนินการประเมินให้ครบทั้ง 3 รอบ เพื่อให้การสรุปผลประเมินเป็นไปอย่างสมบูรณ์",
+announcements: "ประกาศ: ระบบพร้อมให้บริการแล้ว กรุณาติดต่อผู้ดูแลระบบหากมีข้อสงสัย"
+};
+
+let currentUser = null;
+let allUsers = [];
+let currentView = 'login';
+let assessmentState = {
+round: null,
+studentId: null,
+step: 'main' // main, password, student-selection, form
+};
+
+const ROLES = {
+admin: { name: 'ผู้ดูแลระบบ', value: 'admin' },
+student: { name: 'นักศึกษาฝึกประสบการณ์วิชาชีพครู', value: 'student' },
+instructor: { name: 'อาจารย์นิเทศก์', value: 'instructor' },
+mentor: { name: 'ครูพี่เลี้ยง', value: 'mentor' },
+school_admin: { name: 'ผู้บริหารสถานศึกษา', value: 'school_admin' },
+board_rep: { name: 'ผู้แทนคณะกรรมการสถานศึกษา', value: 'board_rep' },
+institution: { name: 'สถานฝึกประสบการณ์วิชาชีพครู', value: 'institution' }
+};
+
+const ASSESSMENT_PASSWORDS = {
+1: 'RS01',
+2: 'RS02',
+3: 'RS03'
+};
+
+const DEFAULT_USERS = [
+{ email: 'vitsanu.nit@mahidol.ac.th', password: 'Kururama', role: 'admin', full_name: 'ผู้ดูแลระบบ', phone: '0812345678', organization: 'มหาวิทยาลัยมหิดล', status: 'approved' },
+{ email: 'student@demo.edu', password: 'Student1234', role: 'student', full_name: 'นักศึกษาทดสอบ', phone: '0823456789', organization: 'มหาวิทยาลัยมหิดล', student_id: 'STD001', major: 'คณิตศาสตร์', internship_school: 'โรงเรียนสาธิต', teaching_subject: 'คณิตศาสตร์', start_date: '2024-01-15', status: 'approved' },
+{ email: 'instructor@demo.edu', password: 'Instructor1234', role: 'instructor', full_name: 'อาจารย์นิเทศก์ทดสอบ', phone: '0834567890', organization: 'มหาวิทยาลัยมหิดล', supervised_schools: 'โรงเรียนสาธิต, โรงเรียนตัวอย่าง', status: 'approved' },
+{ email: 'mentor@demo.edu', password: 'Mentor1234', role: 'mentor', full_name: 'ครูพี่เลี้ยงทดสอบ', phone: '0845678901', organization: 'โรงเรียนสาธิต', affiliated_school: 'โรงเรียนสาธิต', status: 'approved' },
+{ email: 'schooladmin@demo.edu', password: 'SchoolAdmin1234', role: 'school_admin', full_name: 'ผู้บริหารทดสอบ', phone: '0856789012', organization: 'โรงเรียนสาธิต', affiliated_school: 'โรงเรียนสาธิต', status: 'approved' },
+{ email: 'board@demo.edu', password: 'Board1234', role: 'board_rep', full_name: 'ผู้แทนกรรมการทดสอบ', phone: '0867890123', organization: 'โรงเรียนสาธิต', affiliated_school: 'โรงเรียนสาธิต', status: 'approved' },
+{ email: 'institution@demo.edu', password: 'Institution1234', role: 'institution', full_name: 'สถานฝึกทดสอบ', phone: '0878901234', organization: 'โรงเรียนสาธิต', affiliated_school: 'โรงเรียนสาธิต', status: 'approved' }
+];
+
+function showToast(message, type = 'info') {
+const toast = document.createElement('div');
+toast.className = `toast ${type}`;
+toast.textContent = message;
+document.body.appendChild(toast);
+setTimeout(() => toast.remove(), 3000);
+}
+
+function formatDateTime() {
+const now = new Date();
+const options = {
+year: 'numeric',
+month: 'long',
+day: 'numeric',
+hour: '2-digit',
+minute: '2-digit',
+second: '2-digit',
+hour12: false
+};
+return now.toLocaleDateString('th-TH', options);
+}
+
+function validateEmail(email) {
+return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validatePhone(phone) {
+return /^0\d{9}$/.test(phone);
+}
+
+function validateIdCard(idCard) {
+return !idCard || /^\d{13}$/.test(idCard);
+}
+
+// ตัวแปรเก็บสถานะการเริ่มต้นระบบ
+let systemInitialized = false;
+let initializationInProgress = false;
+
+async function initializeDefaultUsers() {
+// ป้องกันการเรียกใช้ซ้ำ
+if (systemInitialized || initializationInProgress) {
+console.log('ระบบเริ่มต้นแล้วหรือกำลังดำเนินการอยู่ - ข้าม');
+return;
+}
+
+// ตั้งค่าสถานะว่ากำลังเริ่มต้นระบบ
+initializationInProgress = true;
+console.log('เริ่มต้นการตรวจสอบผู้ใช้เริ่มต้น...');
+
+try {
+// รอให้ข้อมูลโหลดเสร็จก่อน
+await new Promise(resolve => setTimeout(resolve, 1500));
+
+const existingUsers = allUsers.filter(u => u.type === 'user');
+console.log('พบผู้ใช้ในระบบ:', existingUsers.length, 'คน');
+
+// ถ้ามีผู้ใช้ในระบบแล้ว ไม่ต้องสร้างเพิ่ม
+if (existingUsers.length > 0) {
+console.log('มีผู้ใช้ในระบบแล้ว - ไม่สร้างผู้ใช้เริ่มต้น');
+systemInitialized = true;
+return;
+}
+
+// สร้างผู้ใช้เริ่มต้นเฉพาะเมื่อไม่มีผู้ใช้เลยในระบบ
+console.log('ไม่มีผู้ใช้ในระบบ - เริ่มสร้างผู้ใช้เริ่มต้น...');
+
+for (const defaultUser of DEFAULT_USERS) {
+const newUser = {
+type: 'user',
+...defaultUser,
+id_card: '',
+backup_email: '',
+line_id: '',
+created_at: new Date().toISOString()
+};
+
+const result = await window.dataSdk.create(newUser);
+if (result.isOk) {
+console.log('สร้างผู้ใช้สำเร็จ:', defaultUser.email);
+} else {
+console.error('ไม่สามารถสร้างผู้ใช้:', defaultUser.email);
+}
+}
+
+console.log('สร้างผู้ใช้เริ่มต้นเสร็จสิ้น');
+systemInitialized = true;
+
+} catch (error) {
+console.error('เกิดข้อผิดพลาดในการเริ่มต้นระบบ:', error);
+} finally {
+initializationInProgress = false;
+console.log('สิ้นสุดกระบวนการเริ่มต้นระบบ');
+}
+}
+
+function renderLogin() {
+const config = window.elementSdk?.config || {};
+return `
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
+<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+<div class="text-center mb-8">
+<div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+<svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+</svg>
+</div>
+<h1 class="text-2xl font-bold text-gray-800 mb-2">${config.system_name || defaultConfig.system_name}</h1>
+<p class="text-sm text-gray-600">${config.university_name || defaultConfig.university_name}</p>
+<p class="text-sm text-gray-600">${config.faculty_name || defaultConfig.faculty_name}</p>
+</div>
+
+<form id="loginForm" class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">อีเมล</label>
+<input type="email" id="loginEmail" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+placeholder="example@email.com">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รหัสผ่าน</label>
+<input type="password" id="loginPassword" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+placeholder="••••••••">
+</div>
+<button type="submit" id="loginBtn"
+class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
+เข้าสู่ระบบ
+</button>
+</form>
+
+<div class="mt-6 text-center">
+<button id="showSignupBtn" class="text-blue-600 hover:text-blue-700 font-medium">
+ยังไม่มีบัญชี? ลงทะเบียนที่นี่
+</button>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderSignup() {
+const config = window.elementSdk?.config || {};
+return `
+<div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
+<div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+<div class="text-center mb-8">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">ลงทะเบียนผู้ใช้งาน</h1>
+<p class="text-gray-600">${config.system_name || defaultConfig.system_name}</p>
+<p class="text-sm text-gray-600">${config.university_name || defaultConfig.university_name}</p>
+<p class="text-sm text-gray-600">${config.faculty_name || defaultConfig.faculty_name}</p>
+</div>
+
+<form id="signupForm" class="space-y-6">
+<div class="bg-blue-50 border-l-4 border-blue-600 p-4 mb-6">
+<p class="text-sm text-gray-700"><span class="text-red-500">*</span> = ข้อมูลบังคับกรอก</p>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+ชื่อ-นามสกุล <span class="text-red-500">*</span>
+</label>
+<input type="text" id="fullName" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+เลขบัตรประจำตัวประชาชน (13 หลัก)
+</label>
+<input type="text" id="idCard" maxlength="13" pattern="\\d{13}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+อีเมล <span class="text-red-500">*</span>
+</label>
+<input type="email" id="email" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+อีเมลสำรอง
+</label>
+<input type="email" id="backupEmail"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+รหัสผ่าน <span class="text-red-500">*</span>
+</label>
+<input type="password" id="password" required minlength="6"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+เบอร์โทรศัพท์ (10 หลัก) <span class="text-red-500">*</span>
+</label>
+<input type="tel" id="phone" required maxlength="10" pattern="0\\d{9}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+Line ID
+</label>
+<input type="text" id="lineId"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+หน่วยงานต้นสังกัด <span class="text-red-500">*</span>
+</label>
+<input type="text" id="organization" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div class="md:col-span-2">
+<label class="block text-sm font-medium text-gray-700 mb-2">
+เลือกบทบาท <span class="text-red-500">*</span>
+</label>
+<select id="roleSelect" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">-- เลือกบทบาท --</option>
+${Object.values(ROLES).map(role =>
+`<option value="${role.value}">${role.name}</option>`
+).join('')}
+</select>
+</div>
+</div>
+
+<div id="roleSpecificFields" class="space-y-6"></div>
+
+<div class="flex gap-4 pt-6">
+<button type="submit" id="signupBtn"
+class="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
+ลงทะเบียน
+</button>
+<button type="button" id="backToLoginBtn"
+class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+กลับไปเข้าสู่ระบบ
+</button>
+</div>
+</form>
+</div>
+</div>
+`;
+}
+
+function renderRoleSpecificFields(role) {
+const container = document.getElementById('roleSpecificFields');
+if (!container) return;
+
+let html = '';
+
+if (role === 'student') {
+html = `
+<div class="bg-green-50 p-6 rounded-lg border border-green-200">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติมสำหรับนักศึกษา</h3>
+<div class="grid md:grid-cols-2 gap-4">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รหัสนักศึกษา</label>
+<input type="text" id="studentId" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สาขาวิชา</label>
+<input type="text" id="major" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สถานศึกษาที่ฝึก</label>
+<input type="text" id="internshipSchool" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">วิชาที่ปฏิบัติการสอน</label>
+<input type="text" id="teachingSubject" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">วันเริ่มต้นการฝึก</label>
+<input type="date" id="startDate" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+</div>
+</div>
+`;
+} else if (role === 'instructor') {
+html = `
+<div class="bg-purple-50 p-6 rounded-lg border border-purple-200">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติมสำหรับอาจารย์นิเทศก์</h3>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รายการสถานศึกษาที่นิเทศ</label>
+<div class="space-y-3">
+<div class="flex gap-2">
+<input type="text" id="newSchoolInput" placeholder="ชื่อสถานศึกษา"
+class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<button type="button" id="addSchoolBtn"
+class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+</svg>
+เพิ่ม
+</button>
+</div>
+<div id="schoolsList" class="space-y-2"></div>
+<input type="hidden" id="supervisedSchools">
+</div>
+</div>
+</div>
+`;
+} else if (['mentor', 'school_admin', 'board_rep', 'institution'].includes(role)) {
+html = `
+<div class="bg-orange-50 p-6 rounded-lg border border-orange-200">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติม</h3>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สถานศึกษาที่สังกัด</label>
+<input type="text" id="affiliatedSchool" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+</div>
+`;
+}
+
+container.innerHTML = html;
+
+// เพิ่ม event listeners สำหรับอาจารย์นิเทศก์
+if (role === 'instructor') {
+setupInstructorSchoolHandlers();
+}
+}
+
+function setupInstructorSchoolHandlers() {
+const addSchoolBtn = document.getElementById('addSchoolBtn');
+const newSchoolInput = document.getElementById('newSchoolInput');
+const schoolsList = document.getElementById('schoolsList');
+const supervisedSchoolsInput = document.getElementById('supervisedSchools');
+
+let schools = [];
+
+function updateSchoolsList() {
+schoolsList.innerHTML = schools.map((school, index) => `
+<div class="flex items-center justify-between bg-white p-3 rounded-lg border border-purple-200">
+<span class="text-gray-800">${school}</span>
+<button type="button" data-index="${index}" class="remove-school-btn text-red-600 hover:text-red-800 p-1">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+`).join('');
+
+supervisedSchoolsInput.value = schools.join(', ');
+
+// เพิ่ม event listeners สำหรับปุ่มลบ
+document.querySelectorAll('.remove-school-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+const index = parseInt(e.currentTarget.dataset.index);
+schools.splice(index, 1);
+updateSchoolsList();
+});
+});
+}
+
+function addSchool() {
+const schoolName = newSchoolInput.value.trim();
+if (schoolName && !schools.includes(schoolName)) {
+schools.push(schoolName);
+newSchoolInput.value = '';
+updateSchoolsList();
+}
+}
+
+if (addSchoolBtn) {
+addSchoolBtn.addEventListener('click', addSchool);
+}
+
+if (newSchoolInput) {
+newSchoolInput.addEventListener('keypress', (e) => {
+if (e.key === 'Enter') {
+e.preventDefault();
+addSchool();
+}
+});
+}
+}
+
+function setupProfileInstructorSchoolHandlers() {
+const addSchoolBtn = document.getElementById('profileAddSchoolBtn');
+const newSchoolInput = document.getElementById('profileNewSchoolInput');
+const schoolsList = document.getElementById('profileSchoolsList');
+const supervisedSchoolsInput = document.getElementById('profileSupervisedSchools');
+
+let schools = currentUser.supervised_schools ? currentUser.supervised_schools.split(', ').filter(s => s.trim()) : [];
+
+function updateSchoolsList() {
+schoolsList.innerHTML = schools.map((school, index) => `
+<div class="flex items-center justify-between bg-white p-3 rounded-lg border border-purple-200">
+<span class="text-gray-800">${school}</span>
+<button type="button" data-index="${index}" class="profile-remove-school-btn text-red-600 hover:text-red-800 p-1">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+`).join('');
+
+supervisedSchoolsInput.value = schools.join(', ');
+
+// เพิ่ม event listeners สำหรับปุ่มลบ
+document.querySelectorAll('.profile-remove-school-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+const index = parseInt(e.currentTarget.dataset.index);
+schools.splice(index, 1);
+updateSchoolsList();
+});
+});
+}
+
+function addSchool() {
+const schoolName = newSchoolInput.value.trim();
+if (schoolName && !schools.includes(schoolName)) {
+schools.push(schoolName);
+newSchoolInput.value = '';
+updateSchoolsList();
+}
+}
+
+if (addSchoolBtn) {
+addSchoolBtn.addEventListener('click', addSchool);
+}
+
+if (newSchoolInput) {
+newSchoolInput.addEventListener('keypress', (e) => {
+if (e.key === 'Enter') {
+e.preventDefault();
+addSchool();
+}
+});
+}
+}
+
+function renderDashboard() {
+const config = window.elementSdk?.config || {};
+const users = allUsers.filter(u => u.type === 'user');
+const pendingUsers = users.filter(u => u.status === 'pending');
+const adminCount = users.filter(u => u.role === 'admin' && u.status === 'approved').length;
+const studentCount = users.filter(u => u.role === 'student' && u.status === 'approved').length;
+const instructorCount = users.filter(u => u.role === 'instructor' && u.status === 'approved').length;
+const mentorCount = users.filter(u => u.role === 'mentor' && u.status === 'approved').length;
+const schoolAdminCount = users.filter(u => u.role === 'school_admin' && u.status === 'approved').length;
+const boardRepCount = users.filter(u => u.role === 'board_rep' && u.status === 'approved').length;
+const institutionCount = users.filter(u => u.role === 'institution' && u.status === 'approved').length;
+
+return `
+<div class="p-8">
+<div class="mb-8">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">แดชบอร์ด</h1>
+<p class="text-gray-600">ภาพรวมข้อมูลระบบ - จำนวนผู้ใช้งานแยกตามบทบาท</p>
+</div>
+
+${(config.announcements || defaultConfig.announcements) ? `
+<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+<div class="flex">
+<svg class="w-6 h-6 text-yellow-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+</svg>
+<p class="text-sm text-gray-700">${config.announcements || defaultConfig.announcements}</p>
+</div>
+</div>
+` : ''}
+
+<!-- การ์ดแถวแรก: ผู้ดูแลระบบ, นักศึกษา, อาจารย์นิเทศก์, รออนุมัติ -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-gray-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ผู้ดูแลระบบ</p>
+<p class="text-3xl font-bold text-gray-800">${adminCount}</p>
+</div>
+<div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">นักศึกษาฝึกประสบการณ์วิชาชีพครู</p>
+<p class="text-3xl font-bold text-gray-800">${studentCount}</p>
+</div>
+<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">อาจารย์นิเทศก์</p>
+<p class="text-3xl font-bold text-gray-800">${instructorCount}</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">รออนุมัติ</p>
+<p class="text-3xl font-bold text-gray-800">${pendingUsers.length}</p>
+</div>
+<div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+</svg>
+</div>
+</div>
+</div>
+</div>
+
+<!-- การ์ดแถวที่สอง: ครูพี่เลี้ยง, ผู้บริหารสถานศึกษา, ผู้แทนกรรมการ, สถานฝึกประสบการณ์ -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ครูพี่เลี้ยง</p>
+<p class="text-3xl font-bold text-gray-800">${mentorCount}</p>
+</div>
+<div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-indigo-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ผู้บริหารสถานศึกษา</p>
+<p class="text-3xl font-bold text-gray-800">${schoolAdminCount}</p>
+</div>
+<div class="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-pink-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ผู้แทนกรรมการสถานศึกษา</p>
+<p class="text-3xl font-bold text-gray-800">${boardRepCount}</p>
+</div>
+<div class="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-teal-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">สถานฝึกประสบการณ์วิชาชีพครู</p>
+<p class="text-3xl font-bold text-gray-800">${institutionCount}</p>
+</div>
+<div class="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 21l-12-18h24l-12 18z"/>
+</svg>
+</div>
+</div>
+</div>
+</div>
+
+<!-- สรุปข้อมูลรวม -->
+<div class="mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-md p-6">
+<div class="text-center">
+<h3 class="text-xl font-semibold text-gray-800 mb-2">สรุปผู้ใช้งานทั้งหมด</h3>
+<p class="text-4xl font-bold text-blue-600 mb-2">${users.filter(u => u.status === 'approved').length}</p>
+<p class="text-sm text-gray-600">ผู้ใช้งานที่ได้รับการอนุมัติแล้ว</p>
+${pendingUsers.length > 0 ? `<p class="text-sm text-red-600 mt-2">มี ${pendingUsers.length} ผู้ใช้งานรออนุมัติ</p>` : ''}
+</div>
+</div>
+</div>
+`;
+}
+
+function renderHome() {
+const config = window.elementSdk?.config || {};
+return `
+<div class="p-8">
+<div class="max-w-4xl mx-auto">
+<div class="bg-white rounded-xl shadow-md p-8 mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-4">ยินดีต้อนรับ</h1>
+<p class="text-xl text-gray-600 mb-6">${config.system_name || defaultConfig.system_name}</p>
+
+<div class="bg-blue-50 border-l-4 border-blue-500 p-6 mb-6">
+<h2 class="text-lg font-semibold text-gray-800 mb-2">คำชี้แจงการใช้งานระบบ</h2>
+<p class="text-gray-700">${config.user_instruction || defaultConfig.user_instruction}</p>
+</div>
+
+${(config.announcements || defaultConfig.announcements) ? `
+<div class="bg-yellow-50 border-l-4 border-yellow-400 p-6">
+<h2 class="text-lg font-semibold text-gray-800 mb-2">ประกาศสำคัญ</h2>
+<p class="text-gray-700">${config.announcements || defaultConfig.announcements}</p>
+</div>
+` : ''}
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+</div>
+<h3 class="text-lg font-semibold text-gray-800 mb-2">การประเมิน</h3>
+<p class="text-gray-600">ระบบประเมินสมรรถนะวิชาชีพครู</p>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
+<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+</div>
+<h3 class="text-lg font-semibold text-gray-800 mb-2">การรายงาน</h3>
+<p class="text-gray-600">ระบบรายงานผลการประเมิน</p>
+</div>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderProfile() {
+if (!currentUser) return '';
+
+let roleSpecificFields = '';
+
+if (currentUser.role === 'student') {
+roleSpecificFields = `
+<div class="bg-green-50 p-6 rounded-lg border border-green-200 mb-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติมสำหรับนักศึกษา</h3>
+<div class="grid md:grid-cols-2 gap-4">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รหัสนักศึกษา</label>
+<input type="text" id="profileStudentId" value="${currentUser.student_id || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สาขาวิชา</label>
+<input type="text" id="profileMajor" value="${currentUser.major || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สถานศึกษาที่ฝึก</label>
+<input type="text" id="profileInternshipSchool" value="${currentUser.internship_school || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">วิชาที่ปฏิบัติการสอน</label>
+<input type="text" id="profileTeachingSubject" value="${currentUser.teaching_subject || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">วันเริ่มต้นการฝึก</label>
+<input type="date" id="profileStartDate" value="${currentUser.start_date || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+</div>
+</div>
+`;
+} else if (currentUser.role === 'instructor') {
+const schools = currentUser.supervised_schools ? currentUser.supervised_schools.split(', ').filter(s => s.trim()) : [];
+roleSpecificFields = `
+<div class="bg-purple-50 p-6 rounded-lg border border-purple-200 mb-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติมสำหรับอาจารย์นิเทศก์</h3>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รายการสถานศึกษาที่นิเทศ</label>
+<div class="space-y-3">
+<div class="flex gap-2">
+<input type="text" id="profileNewSchoolInput" placeholder="ชื่อสถานศึกษา"
+class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<button type="button" id="profileAddSchoolBtn"
+class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+</svg>
+เพิ่ม
+</button>
+</div>
+<div id="profileSchoolsList" class="space-y-2">
+${schools.map((school, index) => `
+<div class="flex items-center justify-between bg-white p-3 rounded-lg border border-purple-200">
+<span class="text-gray-800">${school}</span>
+<button type="button" data-index="${index}" class="profile-remove-school-btn text-red-600 hover:text-red-800 p-1">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+`).join('')}
+</div>
+<input type="hidden" id="profileSupervisedSchools" value="${currentUser.supervised_schools || ''}">
+</div>
+</div>
+</div>
+`;
+} else if (['mentor', 'school_admin', 'board_rep', 'institution'].includes(currentUser.role)) {
+roleSpecificFields = `
+<div class="bg-orange-50 p-6 rounded-lg border border-orange-200 mb-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลเพิ่มเติม</h3>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">สถานศึกษาที่สังกัด</label>
+<input type="text" id="profileAffiliatedSchool" value="${currentUser.affiliated_school || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+</div>
+`;
+}
+
+return `
+<div class="p-8">
+<div class="max-w-4xl mx-auto">
+<h1 class="text-3xl font-bold text-gray-800 mb-6">โปรไฟล์ส่วนตัว</h1>
+
+<div class="bg-white rounded-xl shadow-md p-8">
+<div class="flex items-center mb-6 pb-6 border-b">
+<div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mr-6">
+${currentUser.full_name.charAt(0)}
+</div>
+<div>
+<h2 class="text-2xl font-bold text-gray-800">${currentUser.full_name}</h2>
+<p class="text-gray-600">${ROLES[currentUser.role]?.name || currentUser.role}</p>
+<p class="text-sm text-gray-500">สมาชิกตั้งแต่: ${new Date(currentUser.created_at).toLocaleDateString('th-TH')}</p>
+</div>
+</div>
+
+<form id="profileForm" class="space-y-6">
+<div class="bg-blue-50 border-l-4 border-blue-600 p-4 mb-6">
+<p class="text-sm text-gray-700"><span class="text-red-500">*</span> = ข้อมูลบังคับกรอก</p>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+ชื่อ-นามสกุล <span class="text-red-500">*</span>
+</label>
+<input type="text" id="profileFullName" value="${currentUser.full_name}" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+เลขบัตรประจำตัวประชาชน (13 หลัก)
+</label>
+<input type="text" id="profileIdCard" value="${currentUser.id_card || ''}" maxlength="13" pattern="\\d{13}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+อีเมล <span class="text-red-500">*</span>
+</label>
+<input type="email" id="profileEmail" value="${currentUser.email}" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">อีเมลสำรอง</label>
+<input type="email" id="profileBackupEmail" value="${currentUser.backup_email || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+รหัสผ่าน <span class="text-red-500">*</span>
+</label>
+<div class="relative">
+<input type="password" id="profilePassword" value="${currentUser.password}" required minlength="6"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 pr-12">
+<button type="button" id="togglePasswordBtn"
+class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>
+</button>
+</div>
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">
+เบอร์โทรศัพท์ (10 หลัก) <span class="text-red-500">*</span>
+</label>
+<input type="tel" id="profilePhone" value="${currentUser.phone}" required maxlength="10" pattern="0\\d{9}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">Line ID</label>
+<input type="text" id="profileLineId" value="${currentUser.line_id || ''}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+<div class="md:col-span-2">
+<label class="block text-sm font-medium text-gray-700 mb-2">
+หน่วยงานต้นสังกัด <span class="text-red-500">*</span>
+</label>
+<input type="text" id="profileOrganization" value="${currentUser.organization}" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+</div>
+
+${roleSpecificFields}
+
+<div class="flex gap-4 pt-6">
+<button type="submit" id="updateProfileBtn"
+class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
+บันทึกการเปลี่ยนแปลง
+</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderAssessment() {
+if (!['instructor', 'mentor', 'school_admin', 'board_rep'].includes(currentUser.role)) {
+return `
+<div class="p-8">
+<div class="max-w-2xl mx-auto text-center">
+<div class="bg-white rounded-xl shadow-md p-12">
+<svg class="w-24 h-24 text-red-400 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+</svg>
+<h2 class="text-3xl font-bold text-gray-800 mb-4">ไม่มีสิทธิ์เข้าถึง</h2>
+<p class="text-xl text-gray-600 mb-6">คุณไม่มีสิทธิ์ในการประเมิน</p>
+<p class="text-gray-500">เฉพาะอาจารย์นิเทศก์ ครูพี่เลี้ยง ผู้บริหารสถานศึกษา และผู้แทนคณะกรรมการสถานศึกษาเท่านั้นที่สามารถเข้าถึงระบบการประเมินได้</p>
+</div>
+</div>
+</div>
+`;
+}
+
+if (assessmentState.step === 'password') {
+return renderAssessmentPassword(assessmentState.round);
+} else if (assessmentState.step === 'student-selection') {
+return renderStudentSelection(assessmentState.round);
+} else if (assessmentState.step === 'form') {
+return renderAssessmentForm(assessmentState.round, assessmentState.studentId);
+}
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">การประเมินสมรรถนะวิชาชีพครู</h1>
+<p class="text-gray-600">เลือกครั้งที่ต้องการประเมิน</p>
+</div>
+
+<div class="grid md:grid-cols-3 gap-6">
+${[1, 2, 3].map(round => `
+<div class="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+<div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+<span class="text-2xl font-bold text-blue-600">${round}</span>
+</div>
+<h3 class="text-xl font-semibold text-gray-800 mb-2">การประเมินครั้งที่ ${round}</h3>
+<p class="text-gray-600 mb-4">รหัสผ่าน: RS0${round}</p>
+<button data-round="${round}" class="assessment-round-btn w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+เข้าสู่การประเมิน
+</button>
+</div>
+`).join('')}
+</div>
+</div>
+`;
+}
+
+function renderAssessmentPassword(round) {
+return `
+<div class="p-8">
+<div class="max-w-md mx-auto">
+<div class="bg-white rounded-xl shadow-md p-8">
+<div class="text-center mb-6">
+<div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+<svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+</svg>
+</div>
+<h2 class="text-2xl font-bold text-gray-800 mb-2">การประเมินครั้งที่ ${round}</h2>
+<p class="text-gray-600">กรุณาใส่รหัสผ่านเพื่อเข้าสู่ระบบการประเมิน</p>
+</div>
+
+<form id="passwordForm" class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">รหัสผ่าน</label>
+<input type="password" id="assessmentPassword" required
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+placeholder="ใส่รหัสผ่าน">
+</div>
+<button type="submit" id="verifyPasswordBtn"
+class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+ยืนยัน
+</button>
+<button type="button" id="backToAssessmentBtn"
+class="w-full bg-gray-200 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+กลับ
+</button>
+</form>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderStudentSelection(round) {
+const students = allUsers.filter(u => u.type === 'user' && u.role === 'student' && u.status === 'approved');
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">เลือกนักศึกษาที่ต้องการประเมิน</h1>
+<p class="text-gray-600">การประเมินครั้งที่ ${round}</p>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+${students.map(student => `
+<div class="border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer student-card"
+data-student-id="${student.__backendId}" data-round="${round}">
+<div class="flex items-center mb-3">
+<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-3">
+<span class="text-green-600 font-bold">${student.full_name.charAt(0)}</span>
+</div>
+<div>
+<h3 class="font-semibold text-gray-800">${student.full_name}</h3>
+<p class="text-sm text-gray-600">${student.student_id || 'ไม่ระบุรหัส'}</p>
+</div>
+</div>
+<div class="text-sm text-gray-600 space-y-1">
+<p><span class="font-medium">สาขา:</span> ${student.major || 'ไม่ระบุ'}</p>
+<p><span class="font-medium">สถานฝึก:</span> ${student.internship_school || 'ไม่ระบุ'}</p>
+<p><span class="font-medium">วิชาที่สอน:</span> ${student.teaching_subject || 'ไม่ระบุ'}</p>
+</div>
+</div>
+`).join('')}
+</div>
+
+${students.length === 0 ? `
+<div class="text-center py-12">
+<svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+</svg>
+<p class="text-gray-600">ไม่มีนักศึกษาในระบบ</p>
+</div>
+` : ''}
+
+<div class="mt-6">
+<button id="backToAssessmentBtn"
+class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+กลับ
+</button>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderAssessmentForm(assessmentRound, studentId) {
+const student = allUsers.find(u => u.__backendId === studentId);
+if (!student) return '';
+
+const section1Questions = [
+"สามารถวิเคราะห์ความสอดคล้องของสาระการเรียนรู้กับมาตรฐานการเรียนรู้ของหลักสูตรแกนกลางและหลักสูตรสถานศึกษา",
+"สามารถวิเคราะห์ความสอดคล้องของสาระการเรียนรู้เพื่อพัฒนาผู้เรียนให้มีปัญญารู้คิดและมีความเป็นนวัตกร",
+"สามารถเขียนแผนการจัดการเรียนรู้เพื่อพัฒนาผู้เรียนให้มีปัญญารู้คิดและมีความเป็นนวัตกร",
+"สามารถจัดการเรียนรู้ให้เป็นไปตามแผนการจัดการเรียนรู้เพื่อพัฒนาผู้เรียนให้มีปัญญารู้คิดและมีความเป็นนวัตกร",
+"สามารถจัดกิจกรรมและสร้างบรรยากาศการเรียนรู้ให้ผู้เรียนมีความสุขในการเรียน",
+"สามารถจัดกิจกรรมและสร้างบรรยากาศการเรียนรู้ให้ผู้เรียนโดยตระหนักถึงสุขภาวะของผู้เรียน",
+"สามารถดูแล ช่วยเหลือและพัฒนาผู้เรียนเป็นรายบุคคลตามศักยภาพ",
+"สามารถรายงานผลการพัฒนาคุณภาพผู้เรียนได้อย่างเป็นระบบ",
+"สามารถทำวิจัยที่สอดคล้องกับปัญหาของผู้เรียน",
+"สามารถประยุกต์ใช้เทคโนโลยีดิจิทัลในการจัดการเรียนรู้ เช่น CAI, google classroom, Kahoot เป็นต้น",
+"สามารถปฏิบัติงานร่วมกับผู้อื่นอย่างสร้างสรรค์",
+"มีส่วนร่วมในกิจกรรมการพัฒนาวิชาชีพ"
+];
+
+const section2Questions = [
+"ร่วมมือกับผู้ปกครองในการพัฒนาผู้เรียนให้มีคุณลักษณะที่พึงประสงค์ของสถานศึกษา",
+"ร่วมมือกับผู้ปกครองในการแก้ปัญหาผู้เรียนให้มีคุณลักษณะที่พึงประสงค์ของสถานศึกษา",
+"สามารถสร้างเครือข่ายความร่วมมือกับผู้ปกครองเพื่อสนับสนุนการเรียนรู้ที่มีคุณภาพของผู้เรียน",
+"สามารถสร้างเครือข่ายความร่วมมือกับชุมชน เช่น ปราชญ์ชาวบ้าน หน่วยงานปกครองของท้องถิ่น เพื่อสนับสนุนการเรียนรู้ที่มีคุณภาพของผู้เรียน",
+"สามารถรายงานการศึกษาสภาพแวดล้อมของชุมชนโดยเลือกประเด็นศึกษา ได้แก่ ๑) วิทยากรในชุมชน ๒) ปราชญ์ชาวบ้านในชุมชน ๓) แหล่งเรียนรู้ในชุมชน ๔) วัฒนธรรมของชุมชุน ๕) เศรษฐกิจของชุมชน",
+"สามารถปฏิบัติตนในการอยู่ร่วมกับชุมชนได้อย่างเหมาะสม",
+"สามารถรายงานการศึกษาวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น โดยเลือกศึกษาตามประเด็น ได้แก่ ๑) วิทยากรด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๒) ปราชญ์ชาวบ้านด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๓) แหล่งเรียนรู้ในชุมชนด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๔) การอนุรักษ์วัฒนธรรมและภูมิปัญญาในท้องถิ่น",
+"สามารถรายงานการศึกษาวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น โดยเลือกศึกษาตามประเด็น ได้แก่ ๑) วิทยากรด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๒) ปราชญ์ชาวบ้านด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๓) แหล่งเรียนรู้ในชุมชนด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๔) การอนุรักษ์วัฒนธรรมและภูมิปัญญาในท้องถิ่น",
+"สามารถนำวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่นมาบูรณาการในการจัดการเรียนรู้ในชั้นเรียนตามประเด็น ได้แก่ ๑) องค์ความรู้ของวิทยากรด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๒) องค์ความรู้ของปราชญ์ชาวบ้านด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น ๓) องค์ความรู้จากแหล่งเรียนรู้ในชุมชนด้านวัฒนธรรมของชุมชนและภูมิปัญญาในท้องถิ่น"
+];
+
+const section3Questions = [
+"มุ่งมั่นพัฒนาผู้เรียนให้เกิดการเรียนรู้ ทักษะ ปฏิบัติ และคุณลักษณะที่ดีงามอย่างเต็มความสามารถด้วยวิธีการที่เหมาะสมกับระดับความสามารถและช่วงวัย",
+"รักเมตตา เอาใจใส่ ช่วยเหลือและพัฒนาผู้เรียนอย่างเหมาะสมด้วยความบริสุทธิ์ใจ",
+"ส่งเสริมการเรียนรู้อย่างต่อเนื่องด้วยความเอาใจใส่",
+"ยอมรับความแตกต่างของผู้เรียนทางด้านเพศ เชื้อชาติ ศาสนา วัฒนธรรม และระดับการเรียนรู้",
+"กระตุ้นและเสริมสร้างแรงจูงใจในการเรียนรู้แก่ผู้เรียนโดยใช้การเสริมแรงทางบวก",
+"ส่งเสริมให้ผู้เรียนแสดงความสามารถและความคิดริเริ่มสร้างสรรค์อย่างเต็มศักยภาพ",
+"ติดตามข้อมูลข่าวสารการศึกษา สังคม การเมือง การปกครอง และเศรษฐกิจ โดยสามารถนำมาปรับใช้/เชื่อมโยงกับเนื้อหาในการจัดการเรียนรู้ได้อย่างมีประสิทธิภาพ ส่วนหนึ่งในการออกแบบการจัดกิจกรรมการเรียนรู้ได้อย่างเหมาะสม",
+"นำแนวคิด เทคนิควิธีการ หรือความรู้ใหม่ ๆ ที่น่าสนใจ มาประยุกต์ใช้เป็นส่วนหนึ่งในการออกแบบการจัดกิจกรรมการเรียนรู้ได้อย่างเหมาะสม",
+"ประพฤติตนเป็นแบบอย่างที่ดีทั้งทางกาย วาจา และจิตใจ มีคุณธรรมจริยธรรม",
+"ปฏิบัติตนโดยยึดหลักความเป็นธรรม เท่าเทียม และมีส่วนช่วยให้คนในองค์กรอยู่ร่วมกันอย่างสันติ",
+"ปฏิบัติตนตามข้อตกลง กฎกติกาของโรงเรียนด้วยความสมัครใจ ทั้งในด้านการปฏิบัติการสอนและการปฏิบัติหน้าที่อื่นในโรงเรียน",
+"ติดตามข้อมูลและปรับเปลี่ยนตนเองให้สอดคล้องการเปลี่ยนแปลงทางวิชาชีพ วิทยาการ เศรษฐกิจ สังคม และการเมือง",
+"ศรัทธา ซื่อสัตย์ สุจริต และรับผิดชอบต่อวิชาชีพครู",
+"เป็นสมาชิกที่ดีขององค์กรวิชาชีพ",
+"ให้บริการด้วยความจริงใจและเสมอภาค",
+"ไม่เรียกรับหรือยอมรับผลประโยชน์จากการใช้ตำแหน่งหน้าที่โดยมิชอบ",
+"อุทิศตนเพื่อช่วยเหลือเพื่อนผู้ร่วมประกอบวิชาชีพภายใต้หลักการที่ถูกต้อง",
+"สร้างความสามัคคีในหมู่คณะ",
+"ริเริ่ม วางแผน หรือเป็นผู้นำในการทำกิจกรรมเกี่ยวกับการอนุรักษ์และพัฒนาเศรษฐกิจ สังคม ศาสนา ศิลปวัฒนธรรม ภูมิปัญญา หรือสิ่งแวดล้อม",
+"ปฏิบัติตนตามกฎระเบียบของสังคมภายใต้ระบอบประชาธิปไตยอันมีพระมหากษัตริย์ทรงเป็นประมุขอย่างเคร่งครัด โดยคำนึงถึงผลประโยชน์ของส่วนรวมเป็นสำคัญ"
+];
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">แบบประเมินสมรรถนะวิชาชีพครู</h1>
+<div class="bg-blue-50 border-l-4 border-blue-500 p-4">
+<p class="text-gray-700"><span class="font-semibold">นักศึกษา:</span> ${student.full_name}</p>
+<p class="text-gray-700"><span class="font-semibold">การประเมินครั้งที่:</span> ${assessmentRound}</p>
+<p class="text-gray-700"><span class="font-semibold">ผู้ประเมิน:</span> ${currentUser.full_name} (${ROLES[currentUser.role]?.name})</p>
+</div>
+</div>
+
+<form id="assessmentForm" class="space-y-8">
+<div class="bg-white rounded-xl shadow-md p-6">
+<h3 class="text-xl font-semibold text-gray-800 mb-4">ตอนที่ 1 - ด้านการจัดการเรียนรู้</h3>
+<div class="space-y-4">
+${section1Questions.map((question, index) => `
+<div class="border-b pb-4">
+<p class="text-sm text-gray-700 mb-3">${index + 1}. ${question}</p>
+<div class="flex gap-4">
+${[1, 2, 3, 4, 5].map(score => `
+<label class="flex items-center">
+<input type="radio" name="section1_q${index + 1}" value="${score}" required
+class="mr-2 text-blue-600 focus:ring-blue-500">
+<span class="text-sm">${score}</span>
+</label>
+`).join('')}
+</div>
+</div>
+`).join('')}
+
+<div class="mt-6 p-4 bg-blue-50 rounded-lg">
+<div class="flex justify-between items-center">
+<span class="font-semibold text-gray-800">คะแนนรวมตอนที่ 1:</span>
+<span id="section1Total" class="text-xl font-bold text-blue-600">0</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-semibold text-gray-800">คะแนนเฉลี่ย:</span>
+<span id="section1Average" class="text-xl font-bold text-blue-600">0.00</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<h3 class="text-xl font-semibold text-gray-800 mb-4">ตอนที่ 2 - ด้านความสัมพันธ์กับผู้ปกครองและชุมชน</h3>
+<div class="space-y-4">
+${section2Questions.map((question, index) => `
+<div class="border-b pb-4">
+<p class="text-sm text-gray-700 mb-3">${index + 1}. ${question}</p>
+<div class="flex gap-4">
+${[1, 2, 3, 4, 5].map(score => `
+<label class="flex items-center">
+<input type="radio" name="section2_q${index + 1}" value="${score}" required
+class="mr-2 text-blue-600 focus:ring-blue-500">
+<span class="text-sm">${score}</span>
+</label>
+`).join('')}
+</div>
+</div>
+`).join('')}
+
+<div class="mt-6 p-4 bg-blue-50 rounded-lg">
+<div class="flex justify-between items-center">
+<span class="font-semibold text-gray-800">คะแนนรวมตอนที่ 2:</span>
+<span id="section2Total" class="text-xl font-bold text-blue-600">0</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-semibold text-gray-800">คะแนนเฉลี่ย:</span>
+<span id="section2Average" class="text-xl font-bold text-blue-600">0.00</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<h3 class="text-xl font-semibold text-gray-800 mb-4">ตอนที่ 3 - ด้านการปฏิบัติหน้าที่ครูและจรรยาบรรณของวิชาชีพ</h3>
+<div class="space-y-4">
+${section3Questions.map((question, index) => `
+<div class="border-b pb-4">
+<p class="text-sm text-gray-700 mb-3">${index + 1}. ${question}</p>
+<div class="flex gap-4">
+${[1, 2, 3, 4, 5].map(score => `
+<label class="flex items-center">
+<input type="radio" name="section3_q${index + 1}" value="${score}" required
+class="mr-2 text-blue-600 focus:ring-blue-500">
+<span class="text-sm">${score}</span>
+</label>
+`).join('')}
+</div>
+</div>
+`).join('')}
+
+<div class="mt-6 p-4 bg-blue-50 rounded-lg">
+<div class="flex justify-between items-center">
+<span class="font-semibold text-gray-800">คะแนนรวมตอนที่ 3:</span>
+<span id="section3Total" class="text-xl font-bold text-blue-600">0</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-semibold text-gray-800">คะแนนเฉลี่ย:</span>
+<span id="section3Average" class="text-xl font-bold text-blue-600">0.00</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<h3 class="text-xl font-semibold text-gray-800 mb-4">สรุปผลการประเมิน</h3>
+<div class="grid md:grid-cols-2 gap-6">
+<div class="space-y-4">
+<div class="p-4 bg-gray-50 rounded-lg">
+<div class="flex justify-between items-center">
+<span class="font-semibold text-gray-800">คะแนนรวมทั้งหมด:</span>
+<span id="totalScore" class="text-2xl font-bold text-green-600">0</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-semibold text-gray-800">คะแนนเฉลี่ยรวม:</span>
+<span id="overallAverage" class="text-2xl font-bold text-green-600">0.00</span>
+</div>
+</div>
+</div>
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ข้อเสนอแนะเพิ่มเติม</label>
+<textarea id="comments" rows="4"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+placeholder="ข้อเสนอแนะสำหรับนักศึกษา..."></textarea>
+</div>
+</div>
+</div>
+
+<div class="flex gap-4">
+<button type="submit" id="submitAssessmentBtn"
+class="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors">
+บันทึกการประเมิน
+</button>
+<button type="button" id="backToStudentSelectionBtn"
+class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+กลับ
+</button>
+</div>
+</form>
+</div>
+`;
+}
+
+function renderUserManagement() {
+const users = allUsers.filter(u => u.type === 'user');
+const pendingUsers = users.filter(u => u.status === 'pending');
+const approvedUsers = users.filter(u => u.status === 'approved');
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">จัดการผู้ใช้งาน</h1>
+<p class="text-gray-600">เพิ่ม แก้ไข ลบ และอนุมัติผู้ใช้งาน</p>
+</div>
+
+${pendingUsers.length > 0 ? `
+<div class="bg-yellow-50 border-l-4 border-yellow-400 p-6 mb-6">
+<h2 class="text-lg font-semibold text-gray-800 mb-4">ผู้ใช้งานรออนุมัติ (${pendingUsers.length})</h2>
+<div class="space-y-4">
+${pendingUsers.map(user => `
+<div class="bg-white p-4 rounded-lg shadow flex items-center justify-between">
+<div>
+<p class="font-semibold text-gray-800">${user.full_name}</p>
+<p class="text-sm text-gray-600">${user.email} - ${ROLES[user.role]?.name}</p>
+</div>
+<div class="flex gap-2">
+<button data-action="approve" data-id="${user.__backendId}"
+class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+อนุมัติ
+</button>
+<button data-action="reject" data-id="${user.__backendId}"
+class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+ปฏิเสธ
+</button>
+</div>
+</div>
+`).join('')}
+</div>
+</div>
+` : ''}
+
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="flex justify-between items-center mb-6">
+<h2 class="text-xl font-semibold text-gray-800">ผู้ใช้งานที่อนุมัติแล้ว (${approvedUsers.length})</h2>
+<button id="addUserBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+</svg>
+เพิ่มผู้ใช้งาน
+</button>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-gray-50">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ชื่อ-นามสกุล</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">อีเมล</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">บทบาท</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">เบอร์โทร</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">การจัดการ</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-gray-200">
+${approvedUsers.map(user => `
+<tr class="hover:bg-gray-50">
+<td class="px-6 py-4 text-sm text-gray-800">${user.full_name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.email}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${ROLES[user.role]?.name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.phone}</td>
+<td class="px-6 py-4 text-sm">
+<button data-action="view" data-id="${user.__backendId}"
+class="text-blue-600 hover:text-blue-800 mr-3">ดู</button>
+<button data-action="edit" data-id="${user.__backendId}"
+class="text-green-600 hover:text-green-800 mr-3">แก้ไข</button>
+<button data-action="delete" data-id="${user.__backendId}"
+class="text-red-600 hover:text-red-800">ลบ</button>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderMembershipInfo() {
+const users = allUsers.filter(u => u.type === 'user' && u.status === 'approved');
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">ข้อมูลสมาชิก</h1>
+<p class="text-gray-600">รายชื่อสมาชิกทั้งหมดในระบบ</p>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 mb-6">
+<div class="flex flex-col md:flex-row gap-4">
+<div class="flex-1">
+<input type="text" id="searchMember" placeholder="ค้นหาชื่อ, อีเมล, เบอร์โทร หรือหน่วยงาน..."
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+</div>
+<div class="flex gap-2">
+<select id="filterRole" class="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกบทบาท</option>
+${Object.values(ROLES).map(role =>
+`<option value="${role.value}">${role.name}</option>`
+).join('')}
+</select>
+<select id="sortMember" class="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="name">เรียงตามชื่อ</option>
+<option value="role">เรียงตามบทบาท</option>
+<option value="organization">เรียงตามหน่วยงาน</option>
+<option value="email">เรียงตามอีเมล</option>
+</select>
+<button id="clearMemberFilter" class="px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+</div>
+<div class="mt-4 flex items-center justify-between text-sm text-gray-600">
+<span id="memberCount">แสดง ${users.length} สมาชิก</span>
+<div class="flex gap-2">
+<button id="viewMemberGridBtn" class="p-2 rounded-lg bg-blue-100 text-blue-600">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+</svg>
+</button>
+<button id="viewMemberListBtn" class="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+</svg>
+</button>
+</div>
+</div>
+</div>
+
+<div id="memberContainer">
+<div id="memberGrid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+${users.map(user => `
+<div class="member-card bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
+data-name="${user.full_name.toLowerCase()}"
+data-role="${user.role}"
+data-email="${user.email.toLowerCase()}"
+data-phone="${user.phone}"
+data-organization="${user.organization.toLowerCase()}">
+<div class="flex items-center mb-4">
+<div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+<span class="text-blue-600 font-bold text-lg">${user.full_name.charAt(0)}</span>
+</div>
+<div>
+<h3 class="text-lg font-semibold text-gray-800">${user.full_name}</h3>
+<p class="text-sm text-gray-600">${ROLES[user.role]?.name}</p>
+</div>
+</div>
+<div class="space-y-2 text-sm text-gray-600">
+<p><span class="font-medium">อีเมล:</span> ${user.email}</p>
+<p><span class="font-medium">เบอร์โทร:</span> ${user.phone}</p>
+<p><span class="font-medium">หน่วยงาน:</span> ${user.organization}</p>
+${user.student_id ? `<p><span class="font-medium">รหัสนักศึกษา:</span> ${user.student_id}</p>` : ''}
+${user.major ? `<p><span class="font-medium">สาขา:</span> ${user.major}</p>` : ''}
+</div>
+<div class="mt-4 pt-4 border-t border-gray-200">
+<button class="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center" data-action="view-member" data-id="${user.__backendId}">
+<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>
+ดูรายละเอียด
+</button>
+</div>
+</div>
+`).join('')}
+</div>
+
+<div id="memberList" class="hidden">
+<div class="bg-white rounded-xl shadow-md overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-gray-50">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ชื่อ-นามสกุล</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">อีเมล</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">บทบาท</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">เบอร์โทร</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">หน่วยงาน</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">การจัดการ</th>
+</tr>
+</thead>
+<tbody id="memberTableBody" class="divide-y divide-gray-200">
+${users.map(user => `
+<tr class="member-row hover:bg-gray-50"
+data-name="${user.full_name.toLowerCase()}"
+data-role="${user.role}"
+data-email="${user.email.toLowerCase()}"
+data-phone="${user.phone}"
+data-organization="${user.organization.toLowerCase()}">
+<td class="px-6 py-4 text-sm font-medium text-gray-800">${user.full_name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.email}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${ROLES[user.role]?.name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.phone}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.organization}</td>
+<td class="px-6 py-4 text-sm">
+<button class="text-blue-600 hover:text-blue-800" data-action="view-member" data-id="${user.__backendId}">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+${users.length === 0 ? `
+<div class="bg-white rounded-xl shadow-md p-12 text-center">
+<svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+</svg>
+<p class="text-gray-600">ยังไม่มีข้อมูลสมาชิกในระบบ</p>
+</div>
+` : ''}
+</div>
+`;
+}
+
+function renderInternshipInfo() {
+const institutions = allUsers.filter(u => u.type === 'user' && u.role === 'institution' && u.status === 'approved');
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">สถานฝึกประสบการณ์วิชาชีพ</h1>
+<p class="text-gray-600">รายชื่อสถานฝึกประสบการณ์วิชาชีพครู</p>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 mb-6">
+<div class="flex flex-col md:flex-row gap-4">
+<div class="flex-1">
+<input type="text" id="searchInstitution" placeholder="ค้นหาชื่อสถานฝึก, สถานศึกษา, อีเมล หรือเบอร์โทร..."
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+</div>
+<div class="flex gap-2">
+<select id="sortInstitution" class="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500">
+<option value="name">เรียงตามชื่อ</option>
+<option value="school">เรียงตามสถานศึกษา</option>
+<option value="email">เรียงตามอีเมล</option>
+</select>
+<button id="clearInstitutionFilter" class="px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+</div>
+<div class="mt-4 flex items-center justify-between text-sm text-gray-600">
+<span id="institutionCount">แสดง ${institutions.length} สถานฝึก</span>
+<div class="flex gap-2">
+<button id="viewGridBtn" class="p-2 rounded-lg bg-teal-100 text-teal-600">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+</svg>
+</button>
+<button id="viewListBtn" class="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+</svg>
+</button>
+</div>
+</div>
+</div>
+
+<div id="institutionContainer">
+<div id="institutionGrid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+${institutions.map(inst => `
+<div class="institution-card bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
+data-name="${inst.full_name.toLowerCase()}"
+data-school="${(inst.affiliated_school || '').toLowerCase()}"
+data-email="${inst.email.toLowerCase()}"
+data-phone="${inst.phone}">
+<div class="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mb-4">
+<svg class="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+</svg>
+</div>
+<h3 class="text-lg font-semibold text-gray-800 mb-2">${inst.full_name}</h3>
+<div class="space-y-2 text-sm text-gray-600">
+<p><span class="font-medium">สถานศึกษา:</span> ${inst.affiliated_school || '-'}</p>
+<p><span class="font-medium">อีเมล:</span> ${inst.email}</p>
+<p><span class="font-medium">เบอร์โทร:</span> ${inst.phone}</p>
+</div>
+<div class="mt-4 pt-4 border-t border-gray-200">
+<button class="text-teal-600 hover:text-teal-800 text-sm font-medium flex items-center">
+<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>
+ดูรายละเอียด
+</button>
+</div>
+</div>
+`).join('')}
+</div>
+
+<div id="institutionList" class="hidden">
+<div class="bg-white rounded-xl shadow-md overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-gray-50">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ชื่อสถานฝึก</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">สถานศึกษา</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">อีเมล</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">เบอร์โทร</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">การจัดการ</th>
+</tr>
+</thead>
+<tbody id="institutionTableBody" class="divide-y divide-gray-200">
+${institutions.map(inst => `
+<tr class="institution-row hover:bg-gray-50"
+data-name="${inst.full_name.toLowerCase()}"
+data-school="${(inst.affiliated_school || '').toLowerCase()}"
+data-email="${inst.email.toLowerCase()}"
+data-phone="${inst.phone}">
+<td class="px-6 py-4 text-sm font-medium text-gray-800">${inst.full_name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.affiliated_school || '-'}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.email}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.phone}</td>
+<td class="px-6 py-4 text-sm">
+<button class="text-teal-600 hover:text-teal-800">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+${institutions.length === 0 ? `
+<div class="bg-white rounded-xl shadow-md p-12 text-center">
+<svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+</svg>
+<p class="text-gray-600">ยังไม่มีข้อมูลสถานฝึกประสบการณ์วิชาชีพ</p>
+</div>
+` : ''}
+</div>
+`;
+}
+
+function renderSystemSettings() {
+const config = window.elementSdk?.config || {};
+
+return `
+<div class="p-8">
+<div class="max-w-3xl mx-auto">
+<h1 class="text-3xl font-bold text-gray-800 mb-6">การตั้งค่าระบบ</h1>
+
+<div class="bg-white rounded-xl shadow-md p-8">
+<form id="systemSettingsForm" class="space-y-6">
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ชื่อระบบ</label>
+<input type="text" id="settingSystemName" value="${config.system_name || defaultConfig.system_name}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ชื่อมหาวิทยาลัย</label>
+<input type="text" id="settingUniversityName" value="${config.university_name || defaultConfig.university_name}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ชื่อคณะ</label>
+<input type="text" id="settingFacultyName" value="${config.faculty_name || defaultConfig.faculty_name}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ชื่อภาควิชา</label>
+<input type="text" id="settingDepartmentName" value="${config.department_name || defaultConfig.department_name}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ชื่อหลักสูตร</label>
+<input type="text" id="settingProgramName" value="${config.program_name || defaultConfig.program_name}"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">คำชี้แจงการใช้ระบบ</label>
+<textarea id="settingUserInstruction" rows="3"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">${config.user_instruction || defaultConfig.user_instruction}</textarea>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-gray-700 mb-2">ประกาศสำคัญ</label>
+<textarea id="settingAnnouncements" rows="3"
+class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">${config.announcements || defaultConfig.announcements}</textarea>
+</div>
+
+<button type="submit" id="saveSettingsBtn"
+class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
+บันทึกการตั้งค่า
+</button>
+</form>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderReport() {
+const assessments = allUsers.filter(u => u.type === 'assessment');
+const students = allUsers.filter(u => u.type === 'user' && u.role === 'student' && u.status === 'approved');
+const assessors = allUsers.filter(u => u.type === 'user' && ['instructor', 'mentor', 'school_admin', 'board_rep'].includes(u.role) && u.status === 'approved');
+
+// คำนวณสถิติการประเมิน
+const assessmentStats = {
+round1: assessments.filter(a => a.assessment_round === 1),
+round2: assessments.filter(a => a.assessment_round === 2),
+round3: assessments.filter(a => a.assessment_round === 3)
+};
+
+// สถิติผู้ประเมินแต่ละครั้ง
+const assessorStats = {
+round1: {
+instructor: assessmentStats.round1.filter(a => a.assessor_role === 'instructor').length,
+mentor: assessmentStats.round1.filter(a => a.assessor_role === 'mentor').length,
+school_admin: assessmentStats.round1.filter(a => a.assessor_role === 'school_admin').length,
+board_rep: assessmentStats.round1.filter(a => a.assessor_role === 'board_rep').length
+},
+round2: {
+instructor: assessmentStats.round2.filter(a => a.assessor_role === 'instructor').length,
+mentor: assessmentStats.round2.filter(a => a.assessor_role === 'mentor').length,
+school_admin: assessmentStats.round2.filter(a => a.assessor_role === 'school_admin').length,
+board_rep: assessmentStats.round2.filter(a => a.assessor_role === 'board_rep').length
+},
+round3: {
+instructor: assessmentStats.round3.filter(a => a.assessor_role === 'instructor').length,
+mentor: assessmentStats.round3.filter(a => a.assessor_role === 'mentor').length,
+school_admin: assessmentStats.round3.filter(a => a.assessor_role === 'school_admin').length,
+board_rep: assessmentStats.round3.filter(a => a.assessor_role === 'board_rep').length
+}
+};
+
+// คะแนนเฉลี่ยแต่ละครั้ง
+const averageScores = {
+round1: assessmentStats.round1.length > 0 ? (assessmentStats.round1.reduce((sum, a) => sum + a.average_score, 0) / assessmentStats.round1.length).toFixed(2) : '0.00',
+round2: assessmentStats.round2.length > 0 ? (assessmentStats.round2.reduce((sum, a) => sum + a.average_score, 0) / assessmentStats.round2.length).toFixed(2) : '0.00',
+round3: assessmentStats.round3.length > 0 ? (assessmentStats.round3.reduce((sum, a) => sum + a.average_score, 0) / assessmentStats.round3.length).toFixed(2) : '0.00'
+};
+
+// นักศึกษาที่ได้รับการประเมินแต่ละครั้ง
+const studentsAssessed = {
+round1: [...new Set(assessmentStats.round1.map(a => a.student_id))].length,
+round2: [...new Set(assessmentStats.round2.map(a => a.student_id))].length,
+round3: [...new Set(assessmentStats.round3.map(a => a.student_id))].length
+};
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">รายงานผลการประเมิน</h1>
+<p class="text-gray-600">ดูผลการประเมินสมรรถนะวิชาชีพครู และสถิติการประเมิน</p>
+</div>
+
+<!-- สถิติภาพรวม -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">การประเมินทั้งหมด</p>
+<p class="text-3xl font-bold text-gray-800">${assessments.length}</p>
+</div>
+<div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">นักศึกษาที่ได้รับการประเมิน</p>
+<p class="text-3xl font-bold text-gray-800">${[...new Set(assessments.map(a => a.student_id))].length}</p>
+<p class="text-xs text-gray-500">จากทั้งหมด ${students.length} คน</p>
+</div>
+<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ผู้ประเมินที่เข้าร่วม</p>
+<p class="text-3xl font-bold text-gray-800">${[...new Set(assessments.map(a => a.assessor_id))].length}</p>
+<p class="text-xs text-gray-500">จากทั้งหมด ${assessors.length} คน</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">คะแนนเฉลี่ยรวม</p>
+<p class="text-3xl font-bold text-gray-800">${assessments.length > 0 ? (assessments.reduce((sum, a) => sum + a.average_score, 0) / assessments.length).toFixed(2) : '0.00'}</p>
+<p class="text-xs text-gray-500">จากคะแนนเต็ม 5.00</p>
+</div>
+<div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+</svg>
+</div>
+</div>
+</div>
+</div>
+
+<!-- สถิติการประเมินแต่ละครั้ง -->
+<div class="grid md:grid-cols-3 gap-6 mb-8">
+${[1, 2, 3].map(round => `
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="flex items-center mb-4">
+<div class="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
+<span class="text-xl font-bold text-indigo-600">${round}</span>
+</div>
+<div>
+<h3 class="text-lg font-semibold text-gray-800">การประเมินครั้งที่ ${round}</h3>
+<p class="text-sm text-gray-600">สถิติการประเมิน</p>
+</div>
+</div>
+
+<div class="space-y-3">
+<div class="flex justify-between items-center">
+<span class="text-sm text-gray-600">จำนวนการประเมิน:</span>
+<span class="font-semibold text-gray-800">${assessmentStats['round' + round].length} ครั้ง</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-gray-600">นักศึกษาที่ได้รับการประเมิน:</span>
+<span class="font-semibold text-gray-800">${studentsAssessed['round' + round]} คน</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-gray-600">คะแนนเฉลี่ย:</span>
+<span class="font-semibold text-blue-600">${averageScores['round' + round]}</span>
+</div>
+
+<div class="pt-3 border-t border-gray-200">
+<p class="text-xs text-gray-500 mb-2">ผู้ประเมินที่เข้าร่วม:</p>
+<div class="grid grid-cols-2 gap-2 text-xs">
+<div class="flex justify-between">
+<span class="text-gray-600">อาจารย์นิเทศก์:</span>
+<span class="font-medium">${assessorStats['round' + round].instructor}</span>
+</div>
+<div class="flex justify-between">
+<span class="text-gray-600">ครูพี่เลี้ยง:</span>
+<span class="font-medium">${assessorStats['round' + round].mentor}</span>
+</div>
+<div class="flex justify-between">
+<span class="text-gray-600">ผู้บริหาร:</span>
+<span class="font-medium">${assessorStats['round' + round].school_admin}</span>
+</div>
+<div class="flex justify-between">
+<span class="text-gray-600">ผู้แทนกรรมการ:</span>
+<span class="font-medium">${assessorStats['round' + round].board_rep}</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+`).join('')}
+</div>
+
+<!-- ตัวกรองข้อมูล -->
+<div class="bg-white rounded-xl shadow-md p-6 mb-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">กรองข้อมูลการประเมิน</h3>
+<div class="flex gap-4 mb-4">
+<select id="filterStudent" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกนักศึกษา</option>
+${students.map(student =>
+`<option value="${student.__backendId}">${student.full_name} (${student.student_id || 'ไม่ระบุรหัส'})</option>`
+).join('')}
+</select>
+<select id="filterRound" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกครั้ง</option>
+<option value="1">ครั้งที่ 1</option>
+<option value="2">ครั้งที่ 2</option>
+<option value="3">ครั้งที่ 3</option>
+</select>
+<select id="filterAssessorRole" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกบทบาทผู้ประเมิน</option>
+<option value="instructor">อาจารย์นิเทศก์</option>
+<option value="mentor">ครูพี่เลี้ยง</option>
+<option value="school_admin">ผู้บริหารสถานศึกษา</option>
+<option value="board_rep">ผู้แทนคณะกรรมการ</option>
+</select>
+<button id="clearReportFilter" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+</div>
+
+<!-- ตารางรายงานการประเมิน -->
+<div class="bg-white rounded-xl shadow-md p-6">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-lg font-semibold text-gray-800">รายละเอียดการประเมิน</h3>
+<div id="filteredCount" class="text-sm text-gray-600">
+แสดง ${assessments.length} รายการ จากทั้งหมด ${assessments.length} รายการ
+</div>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-gray-50">
+<tr>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">นักศึกษา</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ครั้งที่</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ผู้ประเมิน</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">คะแนนรวม</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">คะแนนเฉลี่ย</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">วันที่ประเมิน</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">การจัดการ</th>
+</tr>
+</thead>
+<tbody id="reportTableBody" class="divide-y divide-gray-200">
+${assessments.map(assessment => `
+<tr class="hover:bg-gray-50">
+<td class="px-4 py-4 text-sm text-gray-800">
+<div class="font-medium">${assessment.student_name}</div>
+</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+ครั้งที่ ${assessment.assessment_round}
+</span>
+</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+<div>
+<div class="font-medium">${assessment.assessor_name}</div>
+<div class="text-xs text-gray-500">${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+</td>
+<td class="px-4 py-4 text-sm font-semibold text-green-600">${assessment.total_score}</td>
+<td class="px-4 py-4 text-sm">
+<div class="flex items-center">
+<span class="font-semibold text-blue-600">${assessment.average_score.toFixed(2)}</span>
+<div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+<div class="bg-blue-600 h-2 rounded-full" style="width: ${(assessment.average_score / 5) * 100}%"></div>
+</div>
+</div>
+</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+${new Date(assessment.created_at).toLocaleDateString('th-TH', {
+day: 'numeric',
+month: 'short',
+year: 'numeric'
+})}
+</td>
+<td class="px-4 py-4 text-sm">
+<button data-action="view-detail" data-id="${assessment.__backendId}"
+class="text-blue-600 hover:text-blue-800 font-medium">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+
+${assessments.length === 0 ? `
+<div class="text-center py-12">
+<svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+<h3 class="text-lg font-medium text-gray-800 mb-2">ยังไม่มีข้อมูลการประเมิน</h3>
+<p class="text-gray-600">เมื่อมีการประเมินแล้ว ข้อมูลจะแสดงที่นี่</p>
+</div>
+` : ''}
+</div>
+</div>
+`;
+}
+
+function renderAssessmentHistory() {
+const assessments = allUsers.filter(u => u.type === 'assessment');
+let userAssessments = [];
+let pageTitle = '';
+let pageDescription = '';
+
+// กำหนดข้อมูลตามบทบาทผู้ใช้
+if (currentUser.role === 'student') {
+userAssessments = assessments.filter(a => a.student_id === currentUser.__backendId);
+pageTitle = 'ประวัติการประเมินของฉัน';
+pageDescription = 'ดูประวัติการประเมินสมรรถนะวิชาชีพครูของคุณ';
+} else if (['instructor', 'mentor', 'school_admin', 'board_rep'].includes(currentUser.role)) {
+userAssessments = assessments.filter(a => a.assessor_id === currentUser.__backendId);
+pageTitle = 'ประวัติการประเมินที่ทำ';
+pageDescription = 'ดูประวัติการประเมินที่คุณได้ทำไว้';
+} else if (currentUser.role === 'admin') {
+userAssessments = assessments;
+pageTitle = 'ประวัติการประเมินทั้งหมด';
+pageDescription = 'ดูประวัติการประเมินทั้งหมดในระบบ';
+}
+
+// คำนวณสถิติ
+const totalAssessments = userAssessments.length;
+const round1Count = userAssessments.filter(a => a.assessment_round === 1).length;
+const round2Count = userAssessments.filter(a => a.assessment_round === 2).length;
+const round3Count = userAssessments.filter(a => a.assessment_round === 3).length;
+const averageScore = totalAssessments > 0 ?
+(userAssessments.reduce((sum, a) => sum + a.average_score, 0) / totalAssessments).toFixed(2) : '0.00';
+
+return `
+<div class="p-8">
+<div class="mb-6">
+<h1 class="text-3xl font-bold text-gray-800 mb-2">${pageTitle}</h1>
+<p class="text-gray-600">${pageDescription}</p>
+</div>
+
+<!-- สถิติส่วนตัว -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">การประเมินทั้งหมด</p>
+<p class="text-3xl font-bold text-gray-800">${totalAssessments}</p>
+</div>
+<div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ครั้งที่ 1</p>
+<p class="text-3xl font-bold text-gray-800">${round1Count}</p>
+</div>
+<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+<span class="text-xl font-bold text-green-600">1</span>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ครั้งที่ 2</p>
+<p class="text-3xl font-bold text-gray-800">${round2Count}</p>
+</div>
+<div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+<span class="text-xl font-bold text-yellow-600">2</span>
+</div>
+</div>
+</div>
+
+<div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm text-gray-600 mb-1">ครั้งที่ 3</p>
+<p class="text-3xl font-bold text-gray-800">${round3Count}</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+<span class="text-xl font-bold text-purple-600">3</span>
+</div>
+</div>
+</div>
+</div>
+
+<!-- คะแนนเฉลี่ยรวม -->
+<div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-md p-6 mb-8">
+<div class="text-center">
+<h3 class="text-xl font-semibold text-gray-800 mb-2">คะแนนเฉลี่ยรวม</h3>
+<p class="text-4xl font-bold text-blue-600 mb-2">${averageScore}</p>
+<p class="text-sm text-gray-600">จากคะแนนเต็ม 5.00</p>
+<div class="mt-4 max-w-md mx-auto">
+<div class="w-full bg-gray-200 rounded-full h-4">
+<div class="bg-blue-600 h-4 rounded-full transition-all duration-500" style="width: ${(parseFloat(averageScore) / 5) * 100}%"></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ตัวกรองและเรียงลำดับ -->
+<div class="bg-white rounded-xl shadow-md p-6 mb-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">กรองและเรียงลำดับข้อมูล</h3>
+<div class="flex flex-wrap gap-4">
+<select id="filterHistoryRound" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกครั้ง</option>
+<option value="1">ครั้งที่ 1</option>
+<option value="2">ครั้งที่ 2</option>
+<option value="3">ครั้งที่ 3</option>
+</select>
+${currentUser.role === 'admin' ? `
+<select id="filterHistoryRole" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="">ทุกบทบาทผู้ประเมิน</option>
+<option value="instructor">อาจารย์นิเทศก์</option>
+<option value="mentor">ครูพี่เลี้ยง</option>
+<option value="school_admin">ผู้บริหารสถานศึกษา</option>
+<option value="board_rep">ผู้แทนคณะกรรมการ</option>
+</select>
+` : ''}
+<select id="sortHistory" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+<option value="date_desc">วันที่ล่าสุด</option>
+<option value="date_asc">วันที่เก่าสุด</option>
+<option value="score_desc">คะแนนสูงสุด</option>
+<option value="score_asc">คะแนนต่ำสุด</option>
+<option value="round_asc">ครั้งที่ 1-3</option>
+<option value="round_desc">ครั้งที่ 3-1</option>
+</select>
+<button id="clearHistoryFilter" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+<div class="mt-4 text-sm text-gray-600">
+<span id="historyCount">แสดง ${totalAssessments} รายการ</span>
+</div>
+</div>
+
+<!-- ตารางประวัติการประเมิน -->
+<div class="bg-white rounded-xl shadow-md p-6">
+<h3 class="text-lg font-semibold text-gray-800 mb-4">รายละเอียดการประเมิน</h3>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-gray-50">
+<tr>
+${currentUser.role !== 'student' ? '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">นักศึกษา</th>' : ''}
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ครั้งที่</th>
+${currentUser.role === 'student' || currentUser.role === 'admin' ? '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ผู้ประเมิน</th>' : ''}
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">คะแนนรวม</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">คะแนนเฉลี่ย</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">วันที่ประเมิน</th>
+<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">การจัดการ</th>
+</tr>
+</thead>
+<tbody id="historyTableBody" class="divide-y divide-gray-200">
+${userAssessments.map(assessment => `
+<tr class="hover:bg-gray-50 history-row">
+${currentUser.role !== 'student' ? `
+<td class="px-4 py-4 text-sm text-gray-800">
+<div class="font-medium">${assessment.student_name}</div>
+</td>
+` : ''}
+<td class="px-4 py-4 text-sm text-gray-600">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+assessment.assessment_round === 1 ? 'bg-green-100 text-green-800' :
+assessment.assessment_round === 2 ? 'bg-yellow-100 text-yellow-800' :
+'bg-purple-100 text-purple-800'
+}">
+ครั้งที่ ${assessment.assessment_round}
+</span>
+</td>
+${currentUser.role === 'student' || currentUser.role === 'admin' ? `
+<td class="px-4 py-4 text-sm text-gray-600">
+<div>
+<div class="font-medium">${assessment.assessor_name}</div>
+<div class="text-xs text-gray-500">${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+</td>
+` : ''}
+<td class="px-4 py-4 text-sm font-semibold text-green-600">${assessment.total_score}</td>
+<td class="px-4 py-4 text-sm">
+<div class="flex items-center">
+<span class="font-semibold text-blue-600">${assessment.average_score.toFixed(2)}</span>
+<div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+<div class="bg-blue-600 h-2 rounded-full" style="width: ${(assessment.average_score / 5) * 100}%"></div>
+</div>
+</div>
+</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+${new Date(assessment.created_at).toLocaleDateString('th-TH', {
+day: 'numeric',
+month: 'short',
+year: 'numeric',
+hour: '2-digit',
+minute: '2-digit'
+})}
+</td>
+<td class="px-4 py-4 text-sm">
+<button data-action="view-history-detail" data-id="${assessment.__backendId}"
+class="text-blue-600 hover:text-blue-800 font-medium">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+
+${userAssessments.length === 0 ? `
+<div class="text-center py-12">
+<svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+</svg>
+<h3 class="text-lg font-medium text-gray-800 mb-2">ยังไม่มีประวัติการประเมิน</h3>
+<p class="text-gray-600">
+${currentUser.role === 'student' ? 'เมื่อมีการประเมินคุณแล้ว ประวัติจะแสดงที่นี่' :
+currentUser.role === 'admin' ? 'เมื่อมีการประเมินในระบบแล้ว ประวัติจะแสดงที่นี่' :
+'เมื่อคุณทำการประเมินแล้ว ประวัติจะแสดงที่นี่'}
+</p>
+</div>
+` : ''}
+</div>
+</div>
+`;
+}
+
+function renderComingSoon(title) {
+return `
+<div class="p-8">
+<div class="max-w-2xl mx-auto text-center">
+<div class="bg-white rounded-xl shadow-md p-12">
+<svg class="w-24 h-24 text-gray-400 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+</svg>
+<h2 class="text-3xl font-bold text-gray-800 mb-4">${title}</h2>
+<p class="text-xl text-gray-600 mb-6">อยู่ระหว่างการพัฒนา</p>
+<p class="text-gray-500">ฟีเจอร์นี้กำลังอยู่ในระหว่างการพัฒนา กรุณารอติดตามในเวอร์ชันถัดไป</p>
+</div>
+</div>
+</div>
+`;
+}
+
+function renderMainApp() {
+const config = window.elementSdk?.config || {};
+const menuItems = [
+{ id: 'home', label: 'หน้าแรก', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'profile', label: 'โปรไฟล์ส่วนตัว', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'assessment', label: 'การประเมิน', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'history', label: 'ประวัติการประเมิน', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'report', label: 'การรายงาน', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'membership', label: 'ข้อมูลสมาชิก', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'internship', label: 'สถานฝึกประสบการณ์', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4', roles: ['admin', 'student', 'instructor', 'mentor', 'school_admin', 'board_rep', 'institution'] },
+{ id: 'dashboard', label: 'แดชบอร์ด', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['admin'] },
+{ id: 'users', label: 'จัดการผู้ใช้งาน', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', roles: ['admin'] },
+{ id: 'settings', label: 'การตั้งค่าระบบ', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z', roles: ['admin'] }
+];
+
+const visibleMenuItems = menuItems.filter(item => item.roles.includes(currentUser.role));
+
+return `
+<div class="flex h-screen bg-gray-50">
+<!-- Sidebar -->
+<div class="w-64 bg-white shadow-lg flex flex-col">
+<div class="p-6 border-b">
+<h1 class="text-xl font-bold text-gray-800">${config.system_name || defaultConfig.system_name}</h1>
+</div>
+
+<nav class="flex-1 p-4 overflow-y-auto">
+${visibleMenuItems.map(item => `
+<button data-menu="${item.id}"
+class="menu-item w-full flex items-center px-4 py-3 mb-2 rounded-lg transition-colors ${currentView === item.id ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}">
+<svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${item.icon}"/>
+</svg>
+<span class="font-medium">${item.label}</span>
+</button>
+`).join('')}
+</nav>
+
+<div class="p-4 border-t">
+<div class="mb-4 p-3 bg-gray-50 rounded-lg">
+<p class="text-sm font-semibold text-gray-800">${currentUser.full_name}</p>
+<p class="text-xs text-gray-600">${ROLES[currentUser.role]?.name}</p>
+</div>
+<button id="logoutBtn"
+class="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+</svg>
+ออกจากระบบ
+</button>
+</div>
+</div>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col overflow-hidden">
+<header class="bg-white shadow-sm p-4 flex justify-end items-center">
+<div class="text-sm text-gray-600" id="currentDateTime">${formatDateTime()}</div>
+</header>
+
+<main class="flex-1 overflow-y-auto" id="mainContent">
+${renderViewContent()}
+</main>
+</div>
+</div>
+`;
+}
+
+function renderViewContent() {
+switch (currentView) {
+case 'home': return renderHome();
+case 'profile': return renderProfile();
+case 'assessment': return renderAssessment();
+case 'history': return renderAssessmentHistory();
+case 'report': return renderReport();
+case 'membership': return renderMembershipInfo();
+case 'internship': return renderInternshipInfo();
+case 'dashboard': return currentUser.role === 'admin' ? renderDashboard() : renderHome();
+case 'users': return currentUser.role === 'admin' ? renderUserManagement() : renderHome();
+case 'settings': return currentUser.role === 'admin' ? renderSystemSettings() : renderHome();
+default: return renderHome();
+}
+}
+
+function render() {
+const app = document.getElementById('app');
+if (!app) return;
+
+if (!currentUser) {
+app.innerHTML = currentView === 'signup' ? renderSignup() : renderLogin();
+attachAuthHandlers();
+} else {
+app.innerHTML = renderMainApp();
+attachMainAppHandlers();
+updateDateTime();
+}
+}
+
+function attachAuthHandlers() {
+const loginForm = document.getElementById('loginForm');
+const signupForm = document.getElementById('signupForm');
+const showSignupBtn = document.getElementById('showSignupBtn');
+const backToLoginBtn = document.getElementById('backToLoginBtn');
+const roleSelect = document.getElementById('roleSelect');
+
+if (loginForm) {
+loginForm.addEventListener('submit', async (e) => {
+e.preventDefault();
+const email = document.getElementById('loginEmail').value.trim();
+const password = document.getElementById('loginPassword').value;
+
+const loginBtn = document.getElementById('loginBtn');
+loginBtn.disabled = true;
+loginBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+const user = allUsers.find(u => u.type === 'user' && u.email === email && u.password === password);
+
+if (!user) {
+showToast('อีเมลหรือรหัสผ่านไม่ถูกต้อง', 'error');
+loginBtn.disabled = false;
+loginBtn.textContent = 'เข้าสู่ระบบ';
+return;
+}
+
+if (user.status === 'pending') {
+showToast('บัญชีของคุณรอการอนุมัติจากผู้ดูแลระบบ', 'info');
+loginBtn.disabled = false;
+loginBtn.textContent = 'เข้าสู่ระบบ';
+return;
+}
+
+currentUser = user;
+currentView = 'home';
+assessmentState = { round: null, studentId: null, step: 'main' };
+showToast('เข้าสู่ระบบสำเร็จ', 'success');
+render();
+});
+}
+
+if (signupForm) {
+signupForm.addEventListener('submit', async (e) => {
+e.preventDefault();
+
+const fullName = document.getElementById('fullName').value.trim();
+const idCard = document.getElementById('idCard').value.trim();
+const email = document.getElementById('email').value.trim();
+const backupEmail = document.getElementById('backupEmail').value.trim();
+const password = document.getElementById('password').value;
+const phone = document.getElementById('phone').value.trim();
+const lineId = document.getElementById('lineId').value.trim();
+const organization = document.getElementById('organization').value.trim();
+const role = document.getElementById('roleSelect').value;
+
+if (!validateEmail(email)) {
+showToast('รูปแบบอีเมลไม่ถูกต้อง', 'error');
+return;
+}
+
+if (!validatePhone(phone)) {
+showToast('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก เริ่มต้นด้วย 0', 'error');
+return;
+}
+
+if (!validateIdCard(idCard)) {
+showToast('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก', 'error');
+return;
+}
+
+const existingUser = allUsers.find(u => u.type === 'user' && u.email === email);
+if (existingUser) {
+showToast('อีเมลนี้ถูกใช้งานแล้ว', 'error');
+return;
+}
+
+const signupBtn = document.getElementById('signupBtn');
+signupBtn.disabled = true;
+signupBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+const newUser = {
+type: 'user',
+full_name: fullName,
+id_card: idCard,
+email: email,
+backup_email: backupEmail,
+password: password,
+phone: phone,
+line_id: lineId,
+organization: organization,
+role: role,
+status: 'pending',
+created_at: new Date().toISOString()
+};
+
+if (role === 'student') {
+newUser.student_id = document.getElementById('studentId')?.value || '';
+newUser.major = document.getElementById('major')?.value || '';
+newUser.internship_school = document.getElementById('internshipSchool')?.value || '';
+newUser.teaching_subject = document.getElementById('teachingSubject')?.value || '';
+newUser.start_date = document.getElementById('startDate')?.value || '';
+} else if (role === 'instructor') {
+newUser.supervised_schools = document.getElementById('supervisedSchools')?.value || '';
+} else if (['mentor', 'school_admin', 'board_rep', 'institution'].includes(role)) {
+newUser.affiliated_school = document.getElementById('affiliatedSchool')?.value || '';
+}
+
+const result = await window.dataSdk.create(newUser);
+
+if (result.isOk) {
+showToast('ลงทะเบียนสำเร็จ รอการอนุมัติจากผู้ดูแลระบบ', 'success');
+currentView = 'login';
+render();
+} else {
+showToast('เกิดข้อผิดพลาดในการลงทะเบียน', 'error');
+signupBtn.disabled = false;
+signupBtn.textContent = 'ลงทะเบียน';
+}
+});
+}
+
+if (showSignupBtn) {
+showSignupBtn.addEventListener('click', () => {
+currentView = 'signup';
+render();
+});
+}
+
+if (backToLoginBtn) {
+backToLoginBtn.addEventListener('click', () => {
+currentView = 'login';
+render();
+});
+}
+
+if (roleSelect) {
+roleSelect.addEventListener('change', (e) => {
+renderRoleSpecificFields(e.target.value);
+});
+}
+}
+
+function attachMainAppHandlers() {
+const menuItems = document.querySelectorAll('.menu-item');
+menuItems.forEach(item => {
+item.addEventListener('click', (e) => {
+const menu = e.currentTarget.dataset.menu;
+currentView = menu;
+assessmentState = { round: null, studentId: null, step: 'main' };
+render();
+});
+});
+
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+logoutBtn.addEventListener('click', () => {
+currentUser = null;
+currentView = 'login';
+assessmentState = { round: null, studentId: null, step: 'main' };
+showToast('ออกจากระบบสำเร็จ', 'success');
+render();
+});
+}
+
+// Assessment handlers
+const assessmentRoundBtns = document.querySelectorAll('.assessment-round-btn');
+assessmentRoundBtns.forEach(btn => {
+btn.addEventListener('click', (e) => {
+const round = parseInt(e.currentTarget.dataset.round);
+assessmentState.round = round;
+assessmentState.step = 'password';
+render();
+});
+});
+
+const passwordForm = document.getElementById('passwordForm');
+if (passwordForm) {
+passwordForm.addEventListener('submit', (e) => {
+e.preventDefault();
+const password = document.getElementById('assessmentPassword').value;
+const correctPassword = ASSESSMENT_PASSWORDS[assessmentState.round];
+
+if (password === correctPassword) {
+assessmentState.step = 'student-selection';
+render();
+} else {
+showToast('รหัสผ่านไม่ถูกต้อง', 'error');
+}
+});
+}
+
+const backToAssessmentBtns = document.querySelectorAll('#backToAssessmentBtn');
+backToAssessmentBtns.forEach(btn => {
+btn.addEventListener('click', () => {
+if (assessmentState.step === 'form') {
+assessmentState.step = 'student-selection';
+} else if (assessmentState.step === 'student-selection') {
+assessmentState.step = 'password';
+} else {
+assessmentState = { round: null, studentId: null, step: 'main' };
+}
+render();
+});
+});
+
+const studentCards = document.querySelectorAll('.student-card');
+studentCards.forEach(card => {
+card.addEventListener('click', (e) => {
+const studentId = e.currentTarget.dataset.studentId;
+const round = parseInt(e.currentTarget.dataset.round);
+assessmentState.studentId = studentId;
+assessmentState.round = round;
+assessmentState.step = 'form';
+render();
+});
+});
+
+const assessmentForm = document.getElementById('assessmentForm');
+if (assessmentForm) {
+// Calculate scores in real-time
+const radioInputs = assessmentForm.querySelectorAll('input[type="radio"]');
+radioInputs.forEach(input => {
+input.addEventListener('change', calculateScores);
+});
+
+assessmentForm.addEventListener('submit', async (e) => {
+e.preventDefault();
+
+const formData = new FormData(assessmentForm);
+const scores = {};
+
+// Collect all scores
+for (let [name, value] of formData.entries()) {
+scores[name] = parseInt(value);
+}
+
+const comments = document.getElementById('comments').value.trim();
+const student = allUsers.find(u => u.__backendId === assessmentState.studentId);
+
+const submitBtn = document.getElementById('submitAssessmentBtn');
+submitBtn.disabled = true;
+submitBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+const assessmentRecord = {
+type: 'assessment',
+student_id: assessmentState.studentId,
+student_name: student.full_name,
+assessor_id: currentUser.__backendId,
+assessor_name: currentUser.full_name,
+assessor_role: currentUser.role,
+assessment_round: assessmentState.round,
+scores: scores,
+comments: comments,
+total_score: Object.values(scores).reduce((sum, score) => sum + score, 0),
+average_score: Object.values(scores).reduce((sum, score) => sum + score, 0) / Object.values(scores).length,
+created_at: new Date().toISOString()
+};
+
+const result = await window.dataSdk.create(assessmentRecord);
+
+if (result.isOk) {
+showToast('บันทึกการประเมินสำเร็จ', 'success');
+assessmentState = { round: null, studentId: null, step: 'main' };
+render();
+} else {
+showToast('เกิดข้อผิดพลาดในการบันทึก', 'error');
+submitBtn.disabled = false;
+submitBtn.textContent = 'บันทึกการประเมิน';
+}
+});
+}
+
+const backToStudentSelectionBtn = document.getElementById('backToStudentSelectionBtn');
+if (backToStudentSelectionBtn) {
+backToStudentSelectionBtn.addEventListener('click', () => {
+assessmentState.step = 'student-selection';
+render();
+});
+}
+
+// Profile form handler
+const profileForm = document.getElementById('profileForm');
+if (profileForm) {
+profileForm.addEventListener('submit', async (e) => {
+e.preventDefault();
+
+const fullName = document.getElementById('profileFullName').value.trim();
+const idCard = document.getElementById('profileIdCard').value.trim();
+const email = document.getElementById('profileEmail').value.trim();
+const backupEmail = document.getElementById('profileBackupEmail').value.trim();
+const password = document.getElementById('profilePassword').value;
+const phone = document.getElementById('profilePhone').value.trim();
+const lineId = document.getElementById('profileLineId').value.trim();
+const organization = document.getElementById('profileOrganization').value.trim();
+
+if (!validateEmail(email)) {
+showToast('รูปแบบอีเมลไม่ถูกต้อง', 'error');
+return;
+}
+
+if (!validatePhone(phone)) {
+showToast('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก', 'error');
+return;
+}
+
+if (!validateIdCard(idCard)) {
+showToast('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก', 'error');
+return;
+}
+
+if (password.length < 6) {
+showToast('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร', 'error');
+return;
+}
+
+const updateBtn = document.getElementById('updateProfileBtn');
+updateBtn.disabled = true;
+updateBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+const updatedUser = {
+...currentUser,
+full_name: fullName,
+id_card: idCard,
+email: email,
+backup_email: backupEmail,
+password: password,
+phone: phone,
+line_id: lineId,
+organization: organization
+};
+
+// เพิ่มข้อมูลเฉพาะบทบาท
+if (currentUser.role === 'student') {
+updatedUser.student_id = document.getElementById('profileStudentId')?.value || '';
+updatedUser.major = document.getElementById('profileMajor')?.value || '';
+updatedUser.internship_school = document.getElementById('profileInternshipSchool')?.value || '';
+updatedUser.teaching_subject = document.getElementById('profileTeachingSubject')?.value || '';
+updatedUser.start_date = document.getElementById('profileStartDate')?.value || '';
+} else if (currentUser.role === 'instructor') {
+updatedUser.supervised_schools = document.getElementById('profileSupervisedSchools')?.value || '';
+} else if (['mentor', 'school_admin', 'board_rep', 'institution'].includes(currentUser.role)) {
+updatedUser.affiliated_school = document.getElementById('profileAffiliatedSchool')?.value || '';
+}
+
+const result = await window.dataSdk.update(updatedUser);
+
+if (result.isOk) {
+currentUser = updatedUser;
+showToast('อัปเดตโปรไฟล์สำเร็จ', 'success');
+render();
+} else {
+showToast('เกิดข้อผิดพลาดในการอัปเดต', 'error');
+updateBtn.disabled = false;
+updateBtn.textContent = 'บันทึกการเปลี่ยนแปลง';
+}
+});
+}
+
+// Toggle password visibility
+const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+if (togglePasswordBtn) {
+togglePasswordBtn.addEventListener('click', () => {
+const passwordInput = document.getElementById('profilePassword');
+const isPassword = passwordInput.type === 'password';
+passwordInput.type = isPassword ? 'text' : 'password';
+
+togglePasswordBtn.innerHTML = isPassword ?
+`<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"/>
+</svg>` :
+`<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>`;
+});
+}
+
+// Setup instructor school handlers for profile
+if (currentUser && currentUser.role === 'instructor') {
+setupProfileInstructorSchoolHandlers();
+}
+
+const systemSettingsForm = document.getElementById('systemSettingsForm');
+if (systemSettingsForm) {
+systemSettingsForm.addEventListener('submit', async (e) => {
+e.preventDefault();
+
+const systemName = document.getElementById('settingSystemName').value.trim();
+const universityName = document.getElementById('settingUniversityName').value.trim();
+const facultyName = document.getElementById('settingFacultyName').value.trim();
+const departmentName = document.getElementById('settingDepartmentName').value.trim();
+const programName = document.getElementById('settingProgramName').value.trim();
+const userInstruction = document.getElementById('settingUserInstruction').value.trim();
+const announcements = document.getElementById('settingAnnouncements').value.trim();
+
+const saveBtn = document.getElementById('saveSettingsBtn');
+saveBtn.disabled = true;
+saveBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+if (window.elementSdk) {
+await window.elementSdk.setConfig({
+system_name: systemName,
+university_name: universityName,
+faculty_name: facultyName,
+department_name: departmentName,
+program_name: programName,
+user_instruction: userInstruction,
+announcements: announcements
+});
+}
+
+showToast('บันทึกการตั้งค่าสำเร็จ', 'success');
+saveBtn.disabled = false;
+saveBtn.textContent = 'บันทึกการตั้งค่า';
+});
+}
+
+const userManagementContainer = document.getElementById('mainContent');
+if (userManagementContainer && currentView === 'users') {
+userManagementContainer.addEventListener('click', async (e) => {
+const action = e.target.dataset.action;
+const userId = e.target.dataset.id;
+
+if (!action || !userId) return;
+
+const user = allUsers.find(u => u.__backendId === userId);
+if (!user) return;
+
+if (action === 'approve') {
+e.target.disabled = true;
+e.target.innerHTML = '<div class="spinner"></div>';
+
+const updatedUser = { ...user, status: 'approved' };
+const result = await window.dataSdk.update(updatedUser);
+
+if (result.isOk) {
+showToast('อนุมัติผู้ใช้งานสำเร็จ', 'success');
+render();
+} else {
+showToast('เกิดข้อผิดพลาด', 'error');
+e.target.disabled = false;
+e.target.textContent = 'อนุมัติ';
+}
+} else if (action === 'reject') {
+e.target.disabled = true;
+e.target.innerHTML = '<div class="spinner"></div>';
+
+const result = await window.dataSdk.delete(user);
+
+if (result.isOk) {
+showToast('ปฏิเสธผู้ใช้งานสำเร็จ', 'success');
+render();
+} else {
+showToast('เกิดข้อผิดพลาด', 'error');
+e.target.disabled = false;
+e.target.textContent = 'ปฏิเสธ';
+}
+} else if (action === 'delete') {
+const confirmDelete = document.createElement('div');
+confirmDelete.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+confirmDelete.innerHTML = `
+<div class="bg-white rounded-xl p-6 max-w-md">
+<h3 class="text-xl font-bold text-gray-800 mb-4">ยืนยันการลบ</h3>
+<p class="text-gray-600 mb-6">คุณต้องการลบผู้ใช้งาน "${user.full_name}" ใช่หรือไม่?</p>
+<div class="flex gap-4">
+<button id="confirmDeleteBtn" class="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700">ลบ</button>
+<button id="cancelDeleteBtn" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300">ยกเลิก</button>
+</div>
+</div>
+`;
+document.body.appendChild(confirmDelete);
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+const result = await window.dataSdk.delete(user);
+if (result.isOk) {
+showToast('ลบผู้ใช้งานสำเร็จ', 'success');
+confirmDelete.remove();
+render();
+} else {
+showToast('เกิดข้อผิดพลาด', 'error');
+}
+});
+
+document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
+confirmDelete.remove();
+});
+} else if (action === 'view') {
+const modal = document.createElement('div');
+modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+modal.innerHTML = `
+<div class="bg-white rounded-xl p-8 max-w-2xl w-full max-h-screen overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-gray-800">ข้อมูลผู้ใช้งาน</h3>
+<button id="closeModalBtn" class="text-gray-500 hover:text-gray-700">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+<div class="space-y-4">
+<div><span class="font-semibold">ชื่อ-นามสกุล:</span> ${user.full_name}</div>
+<div><span class="font-semibold">อีเมล:</span> ${user.email}</div>
+<div><span class="font-semibold">รหัสผ่าน:</span> ${user.password}</div>
+<div><span class="font-semibold">บทบาท:</span> ${ROLES[user.role]?.name}</div>
+<div><span class="font-semibold">เบอร์โทร:</span> ${user.phone}</div>
+<div><span class="font-semibold">หน่วยงาน:</span> ${user.organization}</div>
+${user.id_card ? `<div><span class="font-semibold">เลขบัตรประชาชน:</span> ${user.id_card}</div>` : ''}
+${user.student_id ? `<div><span class="font-semibold">รหัสนักศึกษา:</span> ${user.student_id}</div>` : ''}
+${user.major ? `<div><span class="font-semibold">สาขาวิชา:</span> ${user.major}</div>` : ''}
+</div>
+</div>
+`;
+document.body.appendChild(modal);
+
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+modal.remove();
+});
+}
+});
+}
+
+// Member search and filter handlers
+const searchMember = document.getElementById('searchMember');
+const filterRole = document.getElementById('filterRole');
+const sortMember = document.getElementById('sortMember');
+const clearMemberFilter = document.getElementById('clearMemberFilter');
+const viewMemberGridBtn = document.getElementById('viewMemberGridBtn');
+const viewMemberListBtn = document.getElementById('viewMemberListBtn');
+
+if (searchMember || filterRole || sortMember) {
+let currentMemberViewMode = 'grid';
+
+const filterMembers = () => {
+const searchTerm = searchMember?.value.toLowerCase() || '';
+const roleFilter = filterRole?.value || '';
+const sortBy = sortMember?.value || 'name';
+
+const users = allUsers.filter(u => u.type === 'user' && u.status === 'approved');
+
+// Filter members
+let filtered = users.filter(user => {
+const matchesSearch = user.full_name.toLowerCase().includes(searchTerm) ||
+user.email.toLowerCase().includes(searchTerm) ||
+user.phone.includes(searchTerm) ||
+user.organization.toLowerCase().includes(searchTerm) ||
+ROLES[user.role]?.name.toLowerCase().includes(searchTerm);
+const matchesRole = !roleFilter || user.role === roleFilter;
+return matchesSearch && matchesRole;
+});
+
+// Sort members
+filtered.sort((a, b) => {
+switch (sortBy) {
+case 'name':
+return a.full_name.localeCompare(b.full_name, 'th');
+case 'role':
+return ROLES[a.role]?.name.localeCompare(ROLES[b.role]?.name, 'th') || 0;
+case 'organization':
+return a.organization.localeCompare(b.organization, 'th');
+case 'email':
+return a.email.localeCompare(b.email);
+default:
+return 0;
+}
+});
+
+// Update count
+const countElement = document.getElementById('memberCount');
+if (countElement) {
+countElement.textContent = `แสดง ${filtered.length} สมาชิก`;
+}
+
+// Update grid view
+const gridContainer = document.getElementById('memberGrid');
+if (gridContainer) {
+gridContainer.innerHTML = filtered.map(user => `
+<div class="member-card bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+<div class="flex items-center mb-4">
+<div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+<span class="text-blue-600 font-bold text-lg">${user.full_name.charAt(0)}</span>
+</div>
+<div>
+<h3 class="text-lg font-semibold text-gray-800">${user.full_name}</h3>
+<p class="text-sm text-gray-600">${ROLES[user.role]?.name}</p>
+</div>
+</div>
+<div class="space-y-2 text-sm text-gray-600">
+<p><span class="font-medium">อีเมล:</span> ${user.email}</p>
+<p><span class="font-medium">เบอร์โทร:</span> ${user.phone}</p>
+<p><span class="font-medium">หน่วยงาน:</span> ${user.organization}</p>
+${user.student_id ? `<p><span class="font-medium">รหัสนักศึกษา:</span> ${user.student_id}</p>` : ''}
+${user.major ? `<p><span class="font-medium">สาขา:</span> ${user.major}</p>` : ''}
+</div>
+<div class="mt-4 pt-4 border-t border-gray-200">
+<button class="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center" data-action="view-member" data-id="${user.__backendId}">
+<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>
+ดูรายละเอียด
+</button>
+</div>
+</div>
+`).join('');
+}
+
+// Update list view
+const tbody = document.getElementById('memberTableBody');
+if (tbody) {
+tbody.innerHTML = filtered.map(user => `
+<tr class="member-row hover:bg-gray-50">
+<td class="px-6 py-4 text-sm font-medium text-gray-800">${user.full_name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.email}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${ROLES[user.role]?.name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.phone}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${user.organization}</td>
+<td class="px-6 py-4 text-sm">
+<button class="text-blue-600 hover:text-blue-800" data-action="view-member" data-id="${user.__backendId}">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('');
+}
+};
+
+const switchMemberView = (mode) => {
+currentMemberViewMode = mode;
+const gridContainer = document.getElementById('memberGrid');
+const listContainer = document.getElementById('memberList');
+const gridBtn = document.getElementById('viewMemberGridBtn');
+const listBtn = document.getElementById('viewMemberListBtn');
+
+if (mode === 'grid') {
+gridContainer?.classList.remove('hidden');
+listContainer?.classList.add('hidden');
+gridBtn?.classList.add('bg-blue-100', 'text-blue-600');
+gridBtn?.classList.remove('text-gray-400', 'hover:bg-gray-100');
+listBtn?.classList.remove('bg-blue-100', 'text-blue-600');
+listBtn?.classList.add('text-gray-400', 'hover:bg-gray-100');
+} else {
+gridContainer?.classList.add('hidden');
+listContainer?.classList.remove('hidden');
+listBtn?.classList.add('bg-blue-100', 'text-blue-600');
+listBtn?.classList.remove('text-gray-400', 'hover:bg-gray-100');
+gridBtn?.classList.remove('bg-blue-100', 'text-blue-600');
+gridBtn?.classList.add('text-gray-400', 'hover:bg-gray-100');
+}
+};
+
+searchMember?.addEventListener('input', filterMembers);
+filterRole?.addEventListener('change', filterMembers);
+sortMember?.addEventListener('change', filterMembers);
+
+clearMemberFilter?.addEventListener('click', () => {
+if (searchMember) searchMember.value = '';
+if (filterRole) filterRole.value = '';
+if (sortMember) sortMember.value = 'name';
+filterMembers();
+});
+
+viewMemberGridBtn?.addEventListener('click', () => switchMemberView('grid'));
+viewMemberListBtn?.addEventListener('click', () => switchMemberView('list'));
+}
+
+// Member detail modal
+const memberContainer = document.getElementById('mainContent');
+if (memberContainer && currentView === 'membership') {
+memberContainer.addEventListener('click', (e) => {
+if (e.target.dataset.action === 'view-member' || e.target.closest('[data-action="view-member"]')) {
+const button = e.target.dataset.action === 'view-member' ? e.target : e.target.closest('[data-action="view-member"]');
+const userId = button.dataset.id;
+const user = allUsers.find(u => u.__backendId === userId);
+if (!user) return;
+
+const modal = document.createElement('div');
+modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+modal.innerHTML = `
+<div class="bg-white rounded-xl p-8 max-w-2xl w-full max-h-screen overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-gray-800">ข้อมูลสมาชิก</h3>
+<button id="closeMemberModalBtn" class="text-gray-500 hover:text-gray-700">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+<div class="flex items-center mb-6 pb-6 border-b">
+<div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mr-6">
+${user.full_name.charAt(0)}
+</div>
+<div>
+<h2 class="text-2xl font-bold text-gray-800">${user.full_name}</h2>
+<p class="text-gray-600">${ROLES[user.role]?.name || user.role}</p>
+<p class="text-sm text-gray-500">สมาชิกตั้งแต่: ${new Date(user.created_at).toLocaleDateString('th-TH')}</p>
+</div>
+</div>
+<div class="grid md:grid-cols-2 gap-6">
+<div class="space-y-4">
+<div><span class="font-semibold text-gray-700">อีเมล:</span> <span class="text-gray-600">${user.email}</span></div>
+<div><span class="font-semibold text-gray-700">เบอร์โทร:</span> <span class="text-gray-600">${user.phone}</span></div>
+<div><span class="font-semibold text-gray-700">หน่วยงาน:</span> <span class="text-gray-600">${user.organization}</span></div>
+${user.backup_email ? `<div><span class="font-semibold text-gray-700">อีเมลสำรอง:</span> <span class="text-gray-600">${user.backup_email}</span></div>` : ''}
+${user.line_id ? `<div><span class="font-semibold text-gray-700">Line ID:</span> <span class="text-gray-600">${user.line_id}</span></div>` : ''}
+</div>
+<div class="space-y-4">
+${user.id_card ? `<div><span class="font-semibold text-gray-700">เลขบัตรประชาชน:</span> <span class="text-gray-600">${user.id_card}</span></div>` : ''}
+${user.student_id ? `<div><span class="font-semibold text-gray-700">รหัสนักศึกษา:</span> <span class="text-gray-600">${user.student_id}</span></div>` : ''}
+${user.major ? `<div><span class="font-semibold text-gray-700">สาขาวิชา:</span> <span class="text-gray-600">${user.major}</span></div>` : ''}
+${user.internship_school ? `<div><span class="font-semibold text-gray-700">สถานฝึก:</span> <span class="text-gray-600">${user.internship_school}</span></div>` : ''}
+${user.teaching_subject ? `<div><span class="font-semibold text-gray-700">วิชาที่สอน:</span> <span class="text-gray-600">${user.teaching_subject}</span></div>` : ''}
+${user.start_date ? `<div><span class="font-semibold text-gray-700">วันเริ่มฝึก:</span> <span class="text-gray-600">${new Date(user.start_date).toLocaleDateString('th-TH')}</span></div>` : ''}
+${user.supervised_schools ? `<div><span class="font-semibold text-gray-700">สถานศึกษาที่นิเทศ:</span> <span class="text-gray-600">${user.supervised_schools}</span></div>` : ''}
+${user.affiliated_school ? `<div><span class="font-semibold text-gray-700">สถานศึกษาที่สังกัด:</span> <span class="text-gray-600">${user.affiliated_school}</span></div>` : ''}
+</div>
+</div>
+</div>
+`;
+document.body.appendChild(modal);
+
+document.getElementById('closeMemberModalBtn').addEventListener('click', () => {
+modal.remove();
+});
+}
+});
+}
+
+// Report filters
+const filterStudent = document.getElementById('filterStudent');
+const filterRound = document.getElementById('filterRound');
+const filterAssessorRole = document.getElementById('filterAssessorRole');
+const clearReportFilter = document.getElementById('clearReportFilter');
+
+if (filterStudent || filterRound || filterAssessorRole) {
+const filterReports = () => {
+const studentFilter = filterStudent?.value || '';
+const roundFilter = filterRound?.value || '';
+const assessorRoleFilter = filterAssessorRole?.value || '';
+
+const assessments = allUsers.filter(u => u.type === 'assessment');
+const filtered = assessments.filter(assessment => {
+const matchesStudent = !studentFilter || assessment.student_id === studentFilter;
+const matchesRound = !roundFilter || assessment.assessment_round.toString() === roundFilter;
+const matchesAssessorRole = !assessorRoleFilter || assessment.assessor_role === assessorRoleFilter;
+return matchesStudent && matchesRound && matchesAssessorRole;
+});
+
+const tbody = document.getElementById('reportTableBody');
+if (tbody) {
+tbody.innerHTML = filtered.map(assessment => `
+<tr class="hover:bg-gray-50">
+<td class="px-4 py-4 text-sm text-gray-800">${assessment.student_name}</td>
+<td class="px-4 py-4 text-sm text-gray-600">${assessment.assessment_round}</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+<div>
+<div class="font-medium">${assessment.assessor_name}</div>
+<div class="text-xs text-gray-500">${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+</td>
+<td class="px-4 py-4 text-sm font-semibold text-green-600">${assessment.total_score}</td>
+<td class="px-4 py-4 text-sm font-semibold text-blue-600">${assessment.average_score.toFixed(2)}</td>
+<td class="px-4 py-4 text-sm text-gray-600">${new Date(assessment.created_at).toLocaleDateString('th-TH')}</td>
+<td class="px-4 py-4 text-sm">
+<button data-action="view-detail" data-id="${assessment.__backendId}"
+class="text-blue-600 hover:text-blue-800">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('');
+}
+
+// Update filtered count
+const filteredCountElement = document.getElementById('filteredCount');
+if (filteredCountElement) {
+filteredCountElement.textContent = `แสดง ${filtered.length} รายการ จากทั้งหมด ${assessments.length} รายการ`;
+}
+};
+
+filterStudent?.addEventListener('change', filterReports);
+filterRound?.addEventListener('change', filterReports);
+filterAssessorRole?.addEventListener('change', filterReports);
+
+clearReportFilter?.addEventListener('click', () => {
+if (filterStudent) filterStudent.value = '';
+if (filterRound) filterRound.value = '';
+if (filterAssessorRole) filterAssessorRole.value = '';
+filterReports();
+});
+}
+
+// Report detail modal
+const reportContainer = document.getElementById('mainContent');
+if (reportContainer && currentView === 'report') {
+reportContainer.addEventListener('click', (e) => {
+if (e.target.dataset.action === 'view-detail') {
+const assessmentId = e.target.dataset.id;
+const assessment = allUsers.find(u => u.__backendId === assessmentId);
+if (!assessment) return;
+
+const modal = document.createElement('div');
+modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+modal.innerHTML = `
+<div class="bg-white rounded-xl p-8 max-w-4xl w-full max-h-screen overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-gray-800">รายละเอียดการประเมิน</h3>
+<button id="closeReportModalBtn" class="text-gray-500 hover:text-gray-700">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+<div class="space-y-3">
+<div><span class="font-semibold">นักศึกษา:</span> ${assessment.student_name}</div>
+<div><span class="font-semibold">ผู้ประเมิน:</span> ${assessment.assessor_name}</div>
+<div><span class="font-semibold">บทบาทผู้ประเมิน:</span> ${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+<div class="space-y-3">
+<div><span class="font-semibold">การประเมินครั้งที่:</span> ${assessment.assessment_round}</div>
+<div><span class="font-semibold">คะแนนรวม:</span> <span class="text-green-600 font-bold">${assessment.total_score}</span></div>
+<div><span class="font-semibold">คะแนนเฉลี่ย:</span> <span class="text-blue-600 font-bold">${assessment.average_score.toFixed(2)}</span></div>
+</div>
+</div>
+${assessment.comments ? `
+<div class="mb-6">
+<h4 class="font-semibold text-gray-800 mb-2">ข้อเสนอแนะ:</h4>
+<p class="text-gray-700 bg-gray-50 p-4 rounded-lg">${assessment.comments}</p>
+</div>
+` : ''}
+<div class="text-sm text-gray-500">
+วันที่ประเมิน: ${new Date(assessment.created_at).toLocaleDateString('th-TH', {
+year: 'numeric',
+month: 'long',
+day: 'numeric',
+hour: '2-digit',
+minute: '2-digit'
+})}
+</div>
+</div>
+`;
+document.body.appendChild(modal);
+
+document.getElementById('closeReportModalBtn').addEventListener('click', () => {
+modal.remove();
+});
+}
+});
+}
+
+// Institution search and filter handlers
+const searchInstitution = document.getElementById('searchInstitution');
+const sortInstitution = document.getElementById('sortInstitution');
+const clearInstitutionFilter = document.getElementById('clearInstitutionFilter');
+const viewGridBtn = document.getElementById('viewGridBtn');
+const viewListBtn = document.getElementById('viewListBtn');
+
+if (searchInstitution || sortInstitution) {
+let currentViewMode = 'grid';
+
+const filterInstitutions = () => {
+const searchTerm = searchInstitution?.value.toLowerCase() || '';
+const sortBy = sortInstitution?.value || 'name';
+
+const institutions = allUsers.filter(u => u.type === 'user' && u.role === 'institution' && u.status === 'approved');
+
+// Filter institutions
+let filtered = institutions.filter(inst => {
+return inst.full_name.toLowerCase().includes(searchTerm) ||
+(inst.affiliated_school || '').toLowerCase().includes(searchTerm) ||
+inst.email.toLowerCase().includes(searchTerm) ||
+inst.phone.includes(searchTerm);
+});
+
+// Sort institutions
+filtered.sort((a, b) => {
+switch (sortBy) {
+case 'name':
+return a.full_name.localeCompare(b.full_name, 'th');
+case 'school':
+return (a.affiliated_school || '').localeCompare(b.affiliated_school || '', 'th');
+case 'email':
+return a.email.localeCompare(b.email);
+default:
+return 0;
+}
+});
+
+// Update count
+const countElement = document.getElementById('institutionCount');
+if (countElement) {
+countElement.textContent = `แสดง ${filtered.length} สถานฝึก`;
+}
+
+// Update grid view
+const gridContainer = document.getElementById('institutionGrid');
+if (gridContainer) {
+gridContainer.innerHTML = filtered.map(inst => `
+<div class="institution-card bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+<div class="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mb-4">
+<svg class="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+</svg>
+</div>
+<h3 class="text-lg font-semibold text-gray-800 mb-2">${inst.full_name}</h3>
+<div class="space-y-2 text-sm text-gray-600">
+<p><span class="font-medium">สถานศึกษา:</span> ${inst.affiliated_school || '-'}</p>
+<p><span class="font-medium">อีเมล:</span> ${inst.email}</p>
+<p><span class="font-medium">เบอร์โทร:</span> ${inst.phone}</p>
+</div>
+<div class="mt-4 pt-4 border-t border-gray-200">
+<button class="text-teal-600 hover:text-teal-800 text-sm font-medium flex items-center">
+<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+</svg>
+ดูรายละเอียด
+</button>
+</div>
+</div>
+`).join('');
+}
+
+// Update list view
+const tableBody = document.getElementById('institutionTableBody');
+if (tableBody) {
+tableBody.innerHTML = filtered.map(inst => `
+<tr class="institution-row hover:bg-gray-50">
+<td class="px-6 py-4 text-sm font-medium text-gray-800">${inst.full_name}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.affiliated_school || '-'}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.email}</td>
+<td class="px-6 py-4 text-sm text-gray-600">${inst.phone}</td>
+<td class="px-6 py-4 text-sm">
+<button class="text-teal-600 hover:text-teal-800">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('');
+}
+};
+
+const switchView = (mode) => {
+currentViewMode = mode;
+const gridContainer = document.getElementById('institutionGrid');
+const listContainer = document.getElementById('institutionList');
+const gridBtn = document.getElementById('viewGridBtn');
+const listBtn = document.getElementById('viewListBtn');
+
+if (mode === 'grid') {
+gridContainer?.classList.remove('hidden');
+listContainer?.classList.add('hidden');
+gridBtn?.classList.add('bg-teal-100', 'text-teal-600');
+gridBtn?.classList.remove('text-gray-400', 'hover:bg-gray-100');
+listBtn?.classList.remove('bg-teal-100', 'text-teal-600');
+listBtn?.classList.add('text-gray-400', 'hover:bg-gray-100');
+} else {
+gridContainer?.classList.add('hidden');
+listContainer?.classList.remove('hidden');
+listBtn?.classList.add('bg-teal-100', 'text-teal-600');
+listBtn?.classList.remove('text-gray-400', 'hover:bg-gray-100');
+gridBtn?.classList.remove('bg-teal-100', 'text-teal-600');
+gridBtn?.classList.add('text-gray-400', 'hover:bg-gray-100');
+}
+};
+
+searchInstitution?.addEventListener('input', filterInstitutions);
+sortInstitution?.addEventListener('change', filterInstitutions);
+
+clearInstitutionFilter?.addEventListener('click', () => {
+if (searchInstitution) searchInstitution.value = '';
+if (sortInstitution) sortInstitution.value = 'name';
+filterInstitutions();
+});
+
+viewGridBtn?.addEventListener('click', () => switchView('grid'));
+viewListBtn?.addEventListener('click', () => switchView('list'));
+}
+
+// History filters
+const filterHistoryRound = document.getElementById('filterHistoryRound');
+const filterHistoryRole = document.getElementById('filterHistoryRole');
+const sortHistory = document.getElementById('sortHistory');
+const clearHistoryFilter = document.getElementById('clearHistoryFilter');
+
+if (filterHistoryRound || filterHistoryRole || sortHistory) {
+const filterHistory = () => {
+const roundFilter = filterHistoryRound?.value || '';
+const roleFilter = filterHistoryRole?.value || '';
+const sortBy = sortHistory?.value || 'date_desc';
+
+const assessments = allUsers.filter(u => u.type === 'assessment');
+let userAssessments = [];
+
+if (currentUser.role === 'student') {
+userAssessments = assessments.filter(a => a.student_id === currentUser.__backendId);
+} else if (['instructor', 'mentor', 'school_admin', 'board_rep'].includes(currentUser.role)) {
+userAssessments = assessments.filter(a => a.assessor_id === currentUser.__backendId);
+} else if (currentUser.role === 'admin') {
+userAssessments = assessments;
+}
+
+// Apply filters
+let filtered = userAssessments.filter(assessment => {
+const matchesRound = !roundFilter || assessment.assessment_round.toString() === roundFilter;
+const matchesRole = !roleFilter || assessment.assessor_role === roleFilter;
+return matchesRound && matchesRole;
+});
+
+// Apply sorting
+filtered.sort((a, b) => {
+switch (sortBy) {
+case 'date_desc':
+return new Date(b.created_at) - new Date(a.created_at);
+case 'date_asc':
+return new Date(a.created_at) - new Date(b.created_at);
+case 'score_desc':
+return b.average_score - a.average_score;
+case 'score_asc':
+return a.average_score - b.average_score;
+case 'round_asc':
+return a.assessment_round - b.assessment_round;
+case 'round_desc':
+return b.assessment_round - a.assessment_round;
+default:
+return 0;
+}
+});
+
+const tbody = document.getElementById('historyTableBody');
+if (tbody) {
+tbody.innerHTML = filtered.map(assessment => `
+<tr class="hover:bg-gray-50 history-row">
+${currentUser.role !== 'student' ? `
+<td class="px-4 py-4 text-sm text-gray-800">
+<div class="font-medium">${assessment.student_name}</div>
+</td>
+` : ''}
+<td class="px-4 py-4 text-sm text-gray-600">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+assessment.assessment_round === 1 ? 'bg-green-100 text-green-800' :
+assessment.assessment_round === 2 ? 'bg-yellow-100 text-yellow-800' :
+'bg-purple-100 text-purple-800'
+}">
+ครั้งที่ ${assessment.assessment_round}
+</span>
+</td>
+${currentUser.role === 'student' || currentUser.role === 'admin' ? `
+<td class="px-4 py-4 text-sm text-gray-600">
+<div>
+<div class="font-medium">${assessment.assessor_name}</div>
+<div class="text-xs text-gray-500">${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+</td>
+` : ''}
+<td class="px-4 py-4 text-sm font-semibold text-green-600">${assessment.total_score}</td>
+<td class="px-4 py-4 text-sm">
+<div class="flex items-center">
+<span class="font-semibold text-blue-600">${assessment.average_score.toFixed(2)}</span>
+<div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+<div class="bg-blue-600 h-2 rounded-full" style="width: ${(assessment.average_score / 5) * 100}%"></div>
+</div>
+</div>
+</td>
+<td class="px-4 py-4 text-sm text-gray-600">
+${new Date(assessment.created_at).toLocaleDateString('th-TH', {
+day: 'numeric',
+month: 'short',
+year: 'numeric',
+hour: '2-digit',
+minute: '2-digit'
+})}
+</td>
+<td class="px-4 py-4 text-sm">
+<button data-action="view-history-detail" data-id="${assessment.__backendId}"
+class="text-blue-600 hover:text-blue-800 font-medium">ดูรายละเอียด</button>
+</td>
+</tr>
+`).join('');
+}
+
+// Update count
+const countElement = document.getElementById('historyCount');
+if (countElement) {
+countElement.textContent = `แสดง ${filtered.length} รายการ`;
+}
+};
+
+filterHistoryRound?.addEventListener('change', filterHistory);
+filterHistoryRole?.addEventListener('change', filterHistory);
+sortHistory?.addEventListener('change', filterHistory);
+
+clearHistoryFilter?.addEventListener('click', () => {
+if (filterHistoryRound) filterHistoryRound.value = '';
+if (filterHistoryRole) filterHistoryRole.value = '';
+if (sortHistory) sortHistory.value = 'date_desc';
+filterHistory();
+});
+}
+
+// History detail modal
+const historyContainer = document.getElementById('mainContent');
+if (historyContainer && currentView === 'history') {
+historyContainer.addEventListener('click', (e) => {
+if (e.target.dataset.action === 'view-history-detail') {
+const assessmentId = e.target.dataset.id;
+const assessment = allUsers.find(u => u.__backendId === assessmentId);
+if (!assessment) return;
+
+const modal = document.createElement('div');
+modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+modal.innerHTML = `
+<div class="bg-white rounded-xl p-8 max-w-4xl w-full max-h-screen overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-gray-800">รายละเอียดการประเมิน</h3>
+<button id="closeHistoryModalBtn" class="text-gray-500 hover:text-gray-700">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+</svg>
+</button>
+</div>
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+<div class="space-y-3">
+<div><span class="font-semibold">นักศึกษา:</span> ${assessment.student_name}</div>
+<div><span class="font-semibold">ผู้ประเมิน:</span> ${assessment.assessor_name}</div>
+<div><span class="font-semibold">บทบาทผู้ประเมิน:</span> ${ROLES[assessment.assessor_role]?.name}</div>
+</div>
+<div class="space-y-3">
+<div><span class="font-semibold">การประเมินครั้งที่:</span> ${assessment.assessment_round}</div>
+<div><span class="font-semibold">คะแนนรวม:</span> <span class="text-green-600 font-bold">${assessment.total_score}</span></div>
+<div><span class="font-semibold">คะแนนเฉลี่ย:</span> <span class="text-blue-600 font-bold">${assessment.average_score.toFixed(2)}</span></div>
+</div>
+</div>
+${assessment.comments ? `
+<div class="mb-6">
+<h4 class="font-semibold text-gray-800 mb-2">ข้อเสนอแนะ:</h4>
+<p class="text-gray-700 bg-gray-50 p-4 rounded-lg">${assessment.comments}</p>
+</div>
+` : ''}
+<div class="text-sm text-gray-500">
+วันที่ประเมิน: ${new Date(assessment.created_at).toLocaleDateString('th-TH', {
+year: 'numeric',
+month: 'long',
+day: 'numeric',
+hour: '2-digit',
+minute: '2-digit'
+})}
+</div>
+</div>
+`;
+document.body.appendChild(modal);
+
+document.getElementById('closeHistoryModalBtn').addEventListener('click', () => {
+modal.remove();
+});
+}
+});
+}
+}
+
+function calculateScores() {
+const form = document.getElementById('assessmentForm');
+if (!form) return;
+
+// Calculate section 1
+let section1Total = 0;
+let section1Count = 0;
+for (let i = 1; i <= 12; i++) {
+const selected = form.querySelector(`input[name="section1_q${i}"]:checked`);
+if (selected) {
+section1Total += parseInt(selected.value);
+section1Count++;
+}
+}
+const section1Average = section1Count > 0 ? (section1Total / section1Count).toFixed(2) : '0.00';
+
+document.getElementById('section1Total').textContent = section1Total;
+document.getElementById('section1Average').textContent = section1Average;
+
+// Calculate section 2
+let section2Total = 0;
+let section2Count = 0;
+for (let i = 1; i <= 9; i++) {
+const selected = form.querySelector(`input[name="section2_q${i}"]:checked`);
+if (selected) {
+section2Total += parseInt(selected.value);
+section2Count++;
+}
+}
+const section2Average = section2Count > 0 ? (section2Total / section2Count).toFixed(2) : '0.00';
+
+document.getElementById('section2Total').textContent = section2Total;
+document.getElementById('section2Average').textContent = section2Average;
+
+// Calculate section 3
+let section3Total = 0;
+let section3Count = 0;
+for (let i = 1; i <= 20; i++) {
+const selected = form.querySelector(`input[name="section3_q${i}"]:checked`);
+if (selected) {
+section3Total += parseInt(selected.value);
+section3Count++;
+}
+}
+const section3Average = section3Count > 0 ? (section3Total / section3Count).toFixed(2) : '0.00';
+
+document.getElementById('section3Total').textContent = section3Total;
+document.getElementById('section3Average').textContent = section3Average;
+
+// Calculate overall totals
+const totalScore = section1Total + section2Total + section3Total;
+const totalCount = section1Count + section2Count + section3Count;
+const overallAverage = totalCount > 0 ? (totalScore / totalCount).toFixed(2) : '0.00';
+
+document.getElementById('totalScore').textContent = totalScore;
+document.getElementById('overallAverage').textContent = overallAverage;
+}
+
+function updateDateTime() {
+const dateTimeElement = document.getElementById('currentDateTime');
+if (dateTimeElement) {
+dateTimeElement.textContent = formatDateTime();
+setTimeout(updateDateTime, 1000);
+}
+}
+
+const dataHandler = {
+onDataChanged(data) {
+allUsers = data;
+if (currentUser) {
+const updatedCurrentUser = data.find(u => u.__backendId === currentUser.__backendId);
+if (updatedCurrentUser) {
+currentUser = updatedCurrentUser;
+}
+}
+render();
+}
+};
+
+async function onConfigChange(config) {
+render();
+}
+
+async function init() {
+if (window.elementSdk) {
+window.elementSdk.init({
+defaultConfig,
+onConfigChange,
+mapToCapabilities: () => ({
+recolorables: [],
+borderables: [],
+fontEditable: undefined,
+fontSizeable: undefined
+}),
+mapToEditPanelValues: (config) => new Map([
+['system_name', config.system_name || defaultConfig.system_name],
+['university_name', config.university_name || defaultConfig.university_name],
+['faculty_name', config.faculty_name || defaultConfig.faculty_name],
+['department_name', config.department_name || defaultConfig.department_name],
+['program_name', config.program_name || defaultConfig.program_name],
+['user_instruction', config.user_instruction || defaultConfig.user_instruction],
+['announcements', config.announcements || defaultConfig.announcements]
+])
+});
+}
+
+const initResult = await window.dataSdk.init(dataHandler);
+if (!initResult.isOk) {
+showToast('ไม่สามารถเชื่อมต่อกับระบบได้', 'error');
+return;
+}
+
+await initializeDefaultUsers();
+}
+
+init();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'996be74af687f4cf',t:'MTc2MTgzNzY5OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
